@@ -20,6 +20,7 @@ input,select,textarea{font:inherit;padding:5px;margin:2px 0;box-sizing:border-bo
 .card{background:#fff;padding:12px;margin:12px 0;border-radius:6px}
 .form label{display:block;margin:8px 0}.form input,.form select{width:100%;max-width:520px;display:block}
 small{color:#667;display:block;font-size:12.5px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:2px 12px;margin:4px 0 10px}.grid input{max-width:none!important}
 button.p{background:#1f3a5f;color:#fff;border:0;padding:7px 14px;border-radius:4px;cursor:pointer}
 button.s{padding:3px 8px;cursor:pointer}
 textarea{width:100%;min-height:44px}
@@ -56,12 +57,12 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
 <!-- Універсальні таблиці довідників -->
 <section v-if="T[tab]">
   <h3>{{T[tab].label}}</h3>
-  <p v-if="!T[tab].noAdd"><button class="p" @click="form={}">+ Додати</button></p>
+  <p v-if="!T[tab].noAdd"><button class="p" @click="addNew()">+ Додати</button></p>
   <table>
     <tr><th v-for="f in T[tab].f" :key="f.k" :title="hint(f)">{{f.l}}</th><th></th></tr>
     <tr v-for="r in D[tab]" :key="r.id">
       <td v-for="f in T[tab].f" :key="f.k">{{show(r,f)}}</td>
-      <td><button class="s" @click="form={...r}">✎</button>
+      <td><button class="s" @click="edit(r)">✎</button>
           <button class="s" v-if="!T[tab].noDel" @click="del(r)">✕</button></td>
     </tr>
   </table>
@@ -75,6 +76,20 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
       <input v-else v-model="form[f.k]">
       <small v-if="hint(f)">{{hint(f)}}</small>
     </label>
+    <template v-if="tab==='disciplines'">
+      <h3>Години за навчальним планом</h3>
+      <small>Значення з навчального плану. Викладач бачитиме їх лише для читання.</small>
+      <div v-for="fm in [['day','Денна форма'],['part','Заочна форма']]" :key="fm[0]">
+        <label class="chk" v-if="fm[0]==='part'"><input type="checkbox" v-model="form.params.part_enabled" style="display:inline;width:auto"> Є заочна форма</label>
+        <template v-if="fm[0]==='day'||form.params.part_enabled">
+          <b>{{fm[1]}}</b>
+          <div class="grid">
+            <label v-for="h in HOURS" :key="h[0]">{{h[1]}}<input type="number" step="any" v-model.number="form.params[fm[0]][h[0]]"></label>
+          </div>
+          <small v-if="sumWarn(fm[0])" style="color:#c62828">{{sumWarn(fm[0])}}</small>
+        </template>
+      </div>
+    </template>
     <button class="p" @click="save">Зберегти</button>
     <button class="s" @click="form=null">Скасувати</button>
   </div>
@@ -170,6 +185,7 @@ const HINTS = {
  'profiles.role': 'admin керує довідниками; teacher працює лише зі своїми дисциплінами.'
 };
 
+const HOURS=[['year','Рік підготовки'],['semester','Семестр'],['total','Усього годин'],['lectures','Лекції'],['practicals','Практичні'],['labs','Лабораторні'],['consultations','Консультації'],['selfstudy','Самостійна робота'],['coursework','з них РГЗ та КР']];
 const LEVELS=['бакалаврський','магістерський','освітньо-науковий'];
 const YEARS=(()=>{const y=new Date().getFullYear(),a=[];for(let i=y+1;i>=2015;i--)a.push(i);return a})();
 
@@ -192,7 +208,7 @@ const clean=t=>(t||'').replace(/^\s*(ІК|ЗК|ФК|ПРН|РН|Р)\.?\s?\d+\.?\
 async function all(t){let o=[],i=0;for(;;){const{data,error}=await sb.from(t).select('*').range(i,i+999);if(error)throw error;o=o.concat(data);if(data.length<1000)return o;i+=1000}}
 
 Vue.createApp({
- data(){return{T,KL,KORD,ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,nc:{kind:'ZK',text:''},
+ data(){return{T,KL,KORD,HOURS,ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,nc:{kind:'ZK',text:''},
   tabs:[['faculties','Факультети'],['departments','Кафедри'],['programs','Програми'],['program_versions','Версії ОП'],['comp','Компетенції'],['disciplines','Дисципліни'],['assign','Призначення'],['profiles','Користувачі']]}},
  async mounted(){const{data}=await sb.auth.getSession();await this.setSession(data.session);this.ready=true},
  computed:{
@@ -203,6 +219,12 @@ Vue.createApp({
   notify(t,k='ok'){this.toast={t,k};clearTimeout(this._t);this._t=setTimeout(()=>this.toast=null,k==='err'?6000:2500)},
   err(e){this.notify('Помилка: '+(e.message||e),'err')},
   go(t){this.tab=t;this.form=null},
+  prep(f){if(this.tab==='disciplines'){f.params=f.params||{};f.params.day=f.params.day||{};f.params.part=f.params.part||{}}return f},
+  edit(r){this.form=this.prep(JSON.parse(JSON.stringify(r)))},
+  addNew(){this.form=this.prep({})},
+  sumWarn(k){const h=this.form.params[k],n=x=>Number(h[x])||0;if(!h.total)return'';
+   const sum=n('lectures')+n('practicals')+n('labs')+n('consultations')+n('selfstudy');
+   return sum!==n('total')?'Сума лекцій, практичних, лабораторних, консультацій і самостійної роботи ('+sum+') не дорівнює «Усього годин» ('+n('total')+') — перевірте.':''},
   hint(f){return HINTS[this.tab+'.'+f.k]||''},
   async setSession(s){this.session=s;this.profile=null;if(!s)return;
    const{data}=await sb.from('profiles').select('*').eq('id',s.user.id).single();this.profile=data;
@@ -218,6 +240,7 @@ Vue.createApp({
   show(r,f){return f.ref?this.lab(f.ref,this.D[f.ref].find(x=>x.id===r[f.k])):r[f.k]},
   async save(){const t=this.tab,p={};
    for(const f of T[t].f){let v=this.form[f.k];p[f.k]=(v===''||v===undefined)?null:v}
+   if(t==='disciplines')p.params=this.form.params;
    const{error}=await(this.form.id?sb.from(t).update(p).eq('id',this.form.id):sb.from(t).insert(p));
    if(error)return this.err(error);this.notify('Збережено');this.form=null;this.D[t]=await all(t)},
   async del(r){if(!confirm('Видалити запис? Пов’язані дані також буде видалено.'))return;
