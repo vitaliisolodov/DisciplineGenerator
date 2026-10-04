@@ -42,14 +42,14 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
   <p><button class="p" @click="login">Увійти</button></p>
 </div>
 
-<div v-else-if="!profile || profile.role!=='admin'" class="box">
-  <p>Ви увійшли, але кабінет викладача буде додано наступним кроком.</p>
+<div v-else-if="!profile" class="box">
+  <p>Профіль користувача не знайдено. Зверніться до адміністратора.</p>
   <button class="p" @click="logout">Вийти</button>
 </div>
 
 <div v-else>
 <header>
-  <button v-for="t in tabs" :key="t[0]" :class="{on:tab===t[0]}" @click="go(t[0])">{{t[1]}}</button>
+  <button v-for="t in visibleTabs" :key="t[0]" :class="{on:tab===t[0]}" @click="go(t[0])">{{t[1]}}</button>
   <span class="sp"></span><button @click="logout">Вийти</button>
 </header>
 <main>
@@ -60,15 +60,15 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
   <p v-if="!T[tab].noAdd"><button class="p" @click="addNew()">+ Додати</button></p>
   <table>
     <tr><th v-for="f in T[tab].f" :key="f.k" :title="hint(f)">{{f.l}}</th><th></th></tr>
-    <tr v-for="r in D[tab]" :key="r.id">
+    <tr v-for="r in rowsOf(tab)" :key="r.id">
       <td v-for="f in T[tab].f" :key="f.k">{{show(r,f)}}</td>
       <td><button class="s" @click="edit(r)">✎</button>
-          <button class="s" v-if="!T[tab].noDel" @click="del(r)">✕</button></td>
+          <button class="s" v-if="!T[tab].noDel&&isAdmin" @click="del(r)">✕</button></td>
     </tr>
   </table>
   <div v-if="form" class="form card">
     <label v-for="f in T[tab].f" :key="f.k">{{f.l}}
-      <select v-if="f.ref||f.opts" v-model="form[f.k]">
+      <select v-if="f.ref||f.opts" v-model="form[f.k]" :disabled="f.k==='version_id'&&form.id&&!isAdmin">
         <option :value="null">—</option>
         <option v-for="o in opts(f)" :key="o.id" :value="o.id">{{o.l}}</option>
       </select>
@@ -90,9 +90,22 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
         </template>
       </div>
     </template>
+    <template v-if="tab==='disciplines'&&isAdmin">
+      <h3>Викладачі</h3>
+      <small>Призначені викладачі самі заповнять години, компетенції та зміст документа.</small>
+      <label class="chk" v-for="p in D.profiles" :key="p.id"><input type="checkbox" :value="p.id" v-model="form.teachers" style="display:inline;width:auto"> {{lab('profiles',p)}}</label>
+    </template>
     <button class="p" @click="save">Зберегти</button>
     <button class="s" @click="form=null">Скасувати</button>
   </div>
+  <template v-if="tab==='disciplines'&&!isAdmin">
+    <h3>Готовність документів</h3>
+    <small>Коли ви завантажили файл, перевірили його і все гаразд — поставте позначку. Її бачить адміністратор (для статистики).</small>
+    <table><tr><th>Дисципліна</th><th>РПНД готовий</th><th>Силабус готовий</th></tr>
+      <tr v-for="d in rowsOf('disciplines')" :key="d.id"><td>{{d.name}}</td>
+        <td v-for="col in ['rpnd_done_at','syllabus_done_at']" :key="col"><label><input type="checkbox" :checked="!!flag(d,col)" @change="flagChange($event,d,col)"> {{flag(d,col)?fmt(flag(d,col)):''}}</label></td></tr>
+    </table>
+  </template>
 </section>
 
 <!-- Компетенції -->
@@ -129,16 +142,31 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
   </template>
 </section>
 
+<!-- Статистика -->
+<section v-else-if="tab==='stats'">
+  <h3>Готовність документів</h3>
+  <select v-model="sv"><option value="">Усі версії ОП</option>
+    <option v-for="v in D.program_versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option></select>
+  <p>РПНД: <b>{{statRows.filter(r=>r.rpnd).length}}</b> з {{statRows.length}} · Силабус: <b>{{statRows.filter(r=>r.syl).length}}</b> з {{statRows.length}}
+    <button class="s" @click="exportCsv">Завантажити CSV</button></p>
+  <table><tr><th>Версія ОП</th><th>Дисципліна</th><th>Викладачі</th><th>РПНД</th><th>Силабус</th></tr>
+    <tr v-for="r in statRows" :key="r.d.id"><td>{{r.ver}}</td><td>{{r.d.name}}</td>
+      <td><span v-if="r.teachers">{{r.teachers}}</span><span v-else style="color:#c62828">не призначено</span></td>
+      <td>{{r.rpnd?'✔ '+fmt(r.rpnd):'—'}}</td><td>{{r.syl?'✔ '+fmt(r.syl):'—'}}</td></tr>
+  </table>
+</section>
+
 <!-- Призначення -->
 <section v-else-if="tab==='assign'">
   <h3>Компетенції та викладачі дисципліни</h3>
   <select v-model="ad"><option value="">— оберіть дисципліну —</option>
-    <option v-for="d in D.disciplines" :key="d.id" :value="d.id">{{d.name}} ({{lab('program_versions',D.program_versions.find(v=>v.id===d.version_id))}})</option></select>
+    <option v-for="d in rowsOf('disciplines')" :key="d.id" :value="d.id">{{d.name}} ({{lab('program_versions',D.program_versions.find(v=>v.id===d.version_id))}})</option></select>
   <template v-if="ad">
-    <h3>Викладачі</h3>
+    <template v-if="isAdmin"><h3>Викладачі</h3>
     <label class="chk" v-for="p in D.profiles" :key="p.id">
       <input type="checkbox" :checked="has('discipline_teachers','user_id',p.id)"
-        @change="toggle('discipline_teachers','user_id',p.id,$event.target.checked)"> {{lab('profiles',p)}}</label>
+        @change="toggle('discipline_teachers','user_id',p.id,$event.target.checked)"> {{lab('profiles',p)}}</label></template>
+    <p v-else>Автори: {{authors(ad)}}</p>
     <template v-for="k in KORD" :key="k">
       <h3>{{KL[k]}}</h3>
       <label class="chk" v-for="c in discComps.filter(x=>x.kind===k)" :key="c.id">
@@ -198,7 +226,7 @@ const T = {
  disciplines:{label:'Дисципліни',f:[{k:'version_id',l:'Версія ОП',ref:'program_versions'},{k:'code',l:'Код'},{k:'name',l:'Назва'},{k:'type',l:'Тип'},{k:'ects',l:'Кредити ЄКТС',num:true},{k:'language',l:'Мова'},{k:'control_type',l:'Форма контролю'}]},
  profiles:{label:'Користувачі',noAdd:true,noDel:true,f:[{k:'full_name',l:'ПІБ'},{k:'position',l:'Посада'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'role',l:'Роль',opts:['teacher','admin']}]}
 };
-const TABLES=[...Object.keys(T),'competencies','discipline_competencies','discipline_teachers'];
+const TABLES=[...Object.keys(T),'competencies','discipline_competencies','discipline_teachers','documents'];
 const KINDS={IntegralCompetency:'IK',GeneralCompetencies:'ZK',SpecialCompetencies:'FK',LearningCompetencies:'RN'};
 const KORD=['IK','ZK','FK','RN'];
 const KL={IK:'Інтегральна',ZK:'Загальні',FK:'Спеціальні (фахові)',RN:'Результати навчання'};
@@ -208,18 +236,24 @@ const clean=t=>(t||'').replace(/^\s*(ІК|ЗК|ФК|ПРН|РН|Р)\.?\s?\d+\.?\
 async function all(t){let o=[],i=0;for(;;){const{data,error}=await sb.from(t).select('*').range(i,i+999);if(error)throw error;o=o.concat(data);if(data.length<1000)return o;i+=1000}}
 
 Vue.createApp({
- data(){return{T,KL,KORD,HOURS,ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,nc:{kind:'ZK',text:''},
-  tabs:[['faculties','Факультети'],['departments','Кафедри'],['programs','Програми'],['program_versions','Версії ОП'],['comp','Компетенції'],['disciplines','Дисципліни'],['assign','Призначення'],['profiles','Користувачі']]}},
+ data(){return{T,KL,KORD,HOURS,ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,sv:'',nc:{kind:'ZK',text:''},
+  tabs:[['faculties','Факультети'],['departments','Кафедри'],['programs','Програми'],['program_versions','Версії ОП'],['comp','Компетенції'],['disciplines','Дисципліни'],['assign','Призначення'],['stats','Статистика'],['profiles','Користувачі']]}},
  async mounted(){const{data}=await sb.auth.getSession();await this.setSession(data.session);this.ready=true},
  computed:{
+  isAdmin(){return !!this.profile&&this.profile.role==='admin'},
+  visibleTabs(){return this.isAdmin?this.tabs:[['disciplines','Мої дисципліни'],['assign','Компетенції']]},
+  statRows(){return(this.D.disciplines||[]).filter(d=>!this.sv||d.version_id===this.sv).map(d=>{
+    const doc=this.docOf(d),ver=this.lab('program_versions',this.D.program_versions.find(v=>v.id===d.version_id));
+    return{d,ver,teachers:this.authors(d.id,true),rpnd:doc&&doc.rpnd_done_at,syl:doc&&doc.syllabus_done_at}})
+   .sort((a,b)=>a.ver.localeCompare(b.ver)||a.d.name.localeCompare(b.d.name))},
   compList(){return(this.D.competencies||[]).filter(c=>c.version_id===this.cv).sort((a,b)=>a.sort-b.sort)},
   discComps(){const d=(this.D.disciplines||[]).find(x=>x.id===this.ad);return d?(this.D.competencies||[]).filter(c=>c.version_id===d.version_id).sort((a,b)=>a.sort-b.sort):[]}
  },
  methods:{
   notify(t,k='ok'){this.toast={t,k};clearTimeout(this._t);this._t=setTimeout(()=>this.toast=null,k==='err'?6000:2500)},
-  err(e){this.notify('Помилка: '+(e.message||e),'err')},
+  err(e){const m=e.message||String(e);this.notify(m.includes('coerce')||m.includes('row-level')?'Немає прав на цю дію':'Помилка: '+m,'err')},
   go(t){this.tab=t;this.form=null},
-  prep(f){if(this.tab==='disciplines'){f.params=f.params||{};f.params.day=f.params.day||{};f.params.part=f.params.part||{}}return f},
+  prep(f){if(this.tab==='disciplines'){f.params=f.params||{};f.params.day=f.params.day||{};f.params.part=f.params.part||{};f.teachers=(this.D.discipline_teachers||[]).filter(x=>x.discipline_id===f.id).map(x=>x.user_id)}return f},
   edit(r){this.form=this.prep(JSON.parse(JSON.stringify(r)))},
   addNew(){this.form=this.prep({})},
   sumWarn(k){const h=this.form.params[k],n=x=>Number(h[x])||0;if(!h.total)return'';
@@ -228,7 +262,7 @@ Vue.createApp({
   hint(f){return HINTS[this.tab+'.'+f.k]||''},
   async setSession(s){this.session=s;this.profile=null;if(!s)return;
    const{data}=await sb.from('profiles').select('*').eq('id',s.user.id).single();this.profile=data;
-   if(data&&data.role==='admin')await this.loadAll()},
+   if(data){this.tab=data.role==='admin'?'faculties':'disciplines';await this.loadAll()}},
   async login(){const{data,error}=await sb.auth.signInWithPassword({email:this.email,password:this.pw});
    if(error)return this.notify('Невірний email або пароль','err');await this.setSession(data.session)},
   async logout(){await sb.auth.signOut();await this.setSession(null)},
@@ -240,9 +274,32 @@ Vue.createApp({
   show(r,f){return f.ref?this.lab(f.ref,this.D[f.ref].find(x=>x.id===r[f.k])):r[f.k]},
   async save(){const t=this.tab,p={};
    for(const f of T[t].f){let v=this.form[f.k];p[f.k]=(v===''||v===undefined)?null:v}
-   if(t==='disciplines')p.params=this.form.params;
-   const{error}=await(this.form.id?sb.from(t).update(p).eq('id',this.form.id):sb.from(t).insert(p));
-   if(error)return this.err(error);this.notify('Збережено');this.form=null;this.D[t]=await all(t)},
+   if(t==='disciplines'){p.params=this.form.params;if(!this.form.id&&!this.isAdmin)p.created_by=this.session.user.id}
+   const{data,error}=await(this.form.id?sb.from(t).update(p).eq('id',this.form.id):sb.from(t).insert(p)).select('id').single();
+   if(error)return this.err(error);
+   if(t==='disciplines'&&this.isAdmin)await this.saveTeachers(data.id,this.form.teachers||[]);
+   this.notify('Збережено');this.form=null;this.D[t]=await all(t);
+   if(t==='disciplines')this.D.discipline_teachers=await all('discipline_teachers')},
+  rowsOf(t){if(t!=='disciplines'||this.isAdmin)return this.D[t]||[];const me=this.session.user.id;
+   return(this.D.disciplines||[]).filter(d=>(this.D.discipline_teachers||[]).some(x=>x.discipline_id===d.id&&x.user_id===me))},
+  authors(id,orEmpty){return(this.D.discipline_teachers||[]).filter(x=>x.discipline_id===id)
+   .map(x=>this.lab('profiles',(this.D.profiles||[]).find(p=>p.id===x.user_id))).join(', ')||(orEmpty?'':'—')},
+  async saveTeachers(id,list){const cur=(this.D.discipline_teachers||[]).filter(x=>x.discipline_id===id).map(x=>x.user_id);
+   const add=list.filter(u=>!cur.includes(u)),rem=cur.filter(u=>!list.includes(u));
+   if(add.length){const{error}=await sb.from('discipline_teachers').insert(add.map(u=>({discipline_id:id,user_id:u})));if(error)this.err(error)}
+   for(const u of rem){const{error}=await sb.from('discipline_teachers').delete().match({discipline_id:id,user_id:u});if(error)this.err(error)}},
+  fmt(iso){return new Date(iso).toLocaleDateString('uk-UA')},
+  docOf(d){return(this.D.documents||[]).find(x=>x.discipline_id===d.id)},
+  flag(d,col){const x=this.docOf(d);return x?x[col]:null},
+  async flagChange(ev,d,col){const on=ev.target.checked;
+   if(on&&!confirm('Підтверджуєте: файл завантажено, перевірено, і з ним усе гаразд?')){ev.target.checked=false;return}
+   if(!this.docOf(d)){const{error}=await sb.from('documents').insert({discipline_id:d.id,owner_id:this.session.user.id});if(error){ev.target.checked=!on;return this.err(error)}}
+   const{error}=await sb.from('documents').update({[col]:on?new Date().toISOString():null}).eq('discipline_id',d.id);
+   if(error){ev.target.checked=!on;return this.err(error)}
+   this.notify(on?'Позначено як готове':'Позначку знято');this.D.documents=await all('documents')},
+  exportCsv(){const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+   const rows=[['Версія ОП','Дисципліна','Викладачі','РПНД','Силабус'],...this.statRows.map(r=>[r.ver,r.d.name,r.teachers,r.rpnd?this.fmt(r.rpnd):'',r.syl?this.fmt(r.syl):''])];
+   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+rows.map(r=>r.map(q).join(';')).join('\n')],{type:'text/csv'}));a.download='statystyka.csv';a.click()},
   async del(r){if(!confirm('Видалити запис? Пов’язані дані також буде видалено.'))return;
    const{error}=await sb.from(this.tab).delete().eq('id',r.id);if(error)return this.err(error);this.notify('Видалено');await this.loadAll()},
 
