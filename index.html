@@ -17,16 +17,21 @@ table{border-collapse:collapse;width:100%;background:#fff}
 td,th{border:1px solid #dde;padding:5px 8px;text-align:left;vertical-align:top}
 input,select,textarea{font:inherit;padding:5px;margin:2px 0;box-sizing:border-box}
 .box input{width:100%}
-.form label{display:block;margin:6px 0}.form input,.form select{width:100%;max-width:520px;display:block}
+.card{background:#fff;padding:12px;margin:12px 0;border-radius:6px}
+.form label{display:block;margin:8px 0}.form input,.form select{width:100%;max-width:520px;display:block}
+small{color:#667;display:block;font-size:12.5px}
 button.p{background:#1f3a5f;color:#fff;border:0;padding:7px 14px;border-radius:4px;cursor:pointer}
 button.s{padding:3px 8px;cursor:pointer}
-.msg{background:#fff3cd;padding:8px 12px;border-radius:4px}
 textarea{width:100%;min-height:44px}
 h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
+.h{cursor:grab;width:24px;text-align:center;color:#889;user-select:none}
+.toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99;padding:10px 18px;border-radius:6px;color:#fff;box-shadow:0 4px 14px #0004;cursor:pointer;max-width:90vw}
+.toast.ok{background:#2e7d32}.toast.err{background:#c62828}
 </style>
 </head>
 <body>
 <div id="app" v-cloak>
+<div v-if="toast" class="toast" :class="toast.k" @click="toast=null">{{toast.t}}</div>
 <p v-if="!ready" style="padding:20px">Завантаження…</p>
 
 <div v-else-if="!session" class="box">
@@ -34,7 +39,6 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
   <input v-model="email" type="email" placeholder="Email">
   <input v-model="pw" type="password" placeholder="Пароль" @keyup.enter="login">
   <p><button class="p" @click="login">Увійти</button></p>
-  <p class="msg" v-if="msg">{{msg}}</p>
 </div>
 
 <div v-else-if="!profile || profile.role!=='admin'" class="box">
@@ -48,28 +52,28 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
   <span class="sp"></span><button @click="logout">Вийти</button>
 </header>
 <main>
-<p class="msg" v-if="msg">{{msg}}</p>
 
 <!-- Універсальні таблиці довідників -->
 <section v-if="T[tab]">
   <h3>{{T[tab].label}}</h3>
   <p v-if="!T[tab].noAdd"><button class="p" @click="form={}">+ Додати</button></p>
   <table>
-    <tr><th v-for="f in T[tab].f" :key="f[0]">{{f[1]}}</th><th></th></tr>
+    <tr><th v-for="f in T[tab].f" :key="f.k" :title="hint(f)">{{f.l}}</th><th></th></tr>
     <tr v-for="r in D[tab]" :key="r.id">
-      <td v-for="f in T[tab].f" :key="f[0]">{{show(r,f)}}</td>
+      <td v-for="f in T[tab].f" :key="f.k">{{show(r,f)}}</td>
       <td><button class="s" @click="form={...r}">✎</button>
           <button class="s" v-if="!T[tab].noDel" @click="del(r)">✕</button></td>
     </tr>
   </table>
-  <div v-if="form" class="form" style="background:#fff;padding:12px;margin-top:12px;border-radius:6px">
-    <label v-for="f in T[tab].f" :key="f[0]">{{f[1]}}
-      <select v-if="f[2]&&f[2]!=='#'" v-model="form[f[0]]">
+  <div v-if="form" class="form card">
+    <label v-for="f in T[tab].f" :key="f.k">{{f.l}}
+      <select v-if="f.ref||f.opts" v-model="form[f.k]">
         <option :value="null">—</option>
         <option v-for="o in opts(f)" :key="o.id" :value="o.id">{{o.l}}</option>
       </select>
-      <input v-else-if="f[2]==='#'" type="number" step="any" v-model.number="form[f[0]]">
-      <input v-else v-model="form[f[0]]">
+      <input v-else-if="f.num" type="number" step="any" v-model.number="form[f.k]">
+      <input v-else v-model="form[f.k]">
+      <small v-if="hint(f)">{{hint(f)}}</small>
     </label>
     <button class="p" @click="save">Зберегти</button>
     <button class="s" @click="form=null">Скасувати</button>
@@ -82,15 +86,31 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
   <select v-model="cv"><option value="">— оберіть версію ОП —</option>
     <option v-for="v in D.program_versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option></select>
   <template v-if="cv">
-    <p>Імпорт з JSON (існуючі коди оновлюються): <input type="file" accept=".json" @change="importJson"></p>
-    <table>
-      <tr><th>Тип</th><th>Код</th><th>Формулювання</th><th></th></tr>
-      <tr v-for="c in compList" :key="c.id">
-        <td>{{KL[c.kind]}}</td><td>{{c.code}}</td>
-        <td><textarea v-model="c.text" @change="saveComp(c)"></textarea></td>
-        <td><button class="s" @click="delComp(c)">✕</button></td>
-      </tr>
-    </table>
+    <div class="card form">
+      <b>Додати компетенцію</b>
+      <select v-model="nc.kind"><option v-for="k in KORD" :key="k" :value="k">{{KL[k]}}</option></select>
+      <textarea v-model="nc.text" placeholder="Формулювання (без коду на початку)"></textarea>
+      <button class="p" @click="addComp">Додати в кінець списку</button>
+      <small>Код призначається автоматично (ЗК.1, ЗК.2…) і його можна змінити в таблиці. Порядок змінюється перетягуванням за ⠿ або кнопками ↑ ↓ — після цього коди перенумеровуються.</small>
+    </div>
+    <template v-for="k in KORD" :key="k">
+      <template v-if="byKind(k).length">
+        <h3>{{KL[k]}}</h3>
+        <table>
+          <tr v-for="c in byKind(k)" :key="c.id" @dragover.prevent @drop="dropOn(c)">
+            <td class="h"><span draggable="true" @dragstart="drag=c.id" title="Перетягніть">⠿</span></td>
+            <td style="width:90px"><input v-model="c.code" size="7" @change="saveCode(c)"></td>
+            <td><textarea v-model="c.text" @change="saveComp(c)"></textarea></td>
+            <td style="white-space:nowrap">
+              <button class="s" @click="move(c,-1)">↑</button>
+              <button class="s" @click="move(c,1)">↓</button>
+              <button class="s" @click="delComp(c)">✕</button></td>
+          </tr>
+        </table>
+      </template>
+    </template>
+    <details class="card"><summary>Імпорт з JSON (необов’язково)</summary>
+      <p>Існуючі коди оновлюються: <input type="file" accept=".json" @change="importJson"></p></details>
   </template>
 </section>
 
@@ -121,63 +141,131 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
 <script>
 const sb = supabase.createClient('https://ljhnvaydkurzxxuemzee.supabase.co','sb_publishable_GZSQEqlKeC6EmVeYtPaeyA_hrm9wVsO');
 
-// Структура довідників: [поле, підпис, (таблиця-довідник | '#' для числа | масив варіантів)]
+// ====================================================================
+// ПІДКАЗКИ ДО ПОЛІВ. Щоб змінити або додати — правте текст у лапках.
+// Формат рядка:  'таблиця.поле': 'текст підказки',
+// ====================================================================
+const HINTS = {
+ 'faculties.name': 'Без слова «Факультет» і без лапок — вони вже є в шаблоні.',
+ 'faculties.abbr': 'Скорочена назва факультету.',
+ 'faculties.dean': 'Формат: Ім’я ПРІЗВИЩЕ (прізвище великими літерами).',
+ 'departments.name': 'Без слова «Кафедра» і без лапок — вони вже є в шаблоні.',
+ 'departments.abbr': 'Скорочена назва кафедри.',
+ 'departments.head': 'Формат: Ім’я ПРІЗВИЩЕ (прізвище великими літерами).',
+ 'programs.name': 'Повна назва освітньої програми, без лапок.',
+ 'programs.abbr': 'Скорочена назва ОП. Підставляється в рядок «Гарант освітньої програми …».',
+ 'programs.specialty_code': 'Лише код спеціальності, напр.: 172.',
+ 'programs.specialty_name': 'Повна назва спеціальності, без коду.',
+ 'programs.education_level': 'Оберіть зі списку.',
+ 'programs.guarantor': 'Формат: Ім’я ПРІЗВИЩЕ.',
+ 'program_versions.entry_year': 'Рік вступу студентів, для яких діє ця версія програми.',
+ 'disciplines.code': 'Шифр дисципліни з навчального плану.',
+ 'disciplines.name': 'Повна назва дисципліни, без лапок.',
+ 'disciplines.type': 'Обов’язкова чи вибіркова — так, як має стояти в документі.',
+ 'disciplines.ects': 'Кількість кредитів ЄКТС, напр.: 4.',
+ 'disciplines.language': 'Мова викладання, напр.: українська.',
+ 'disciplines.control_type': 'залік або екзамен. Підставляється в речення «Формою підсумкового контролю … є …».',
+ 'profiles.full_name': 'Формат: Ім’я ПРІЗВИЩЕ.',
+ 'profiles.position': 'Посада, напр.: доцент.',
+ 'profiles.role': 'admin керує довідниками; teacher працює лише зі своїми дисциплінами.'
+};
+
+const LEVELS=['бакалаврський','магістерський','освітньо-науковий'];
+const YEARS=(()=>{const y=new Date().getFullYear(),a=[];for(let i=y+1;i>=2015;i--)a.push(i);return a})();
+
+// Структура довідників. ref — вибір із іншої таблиці, opts — власний список, num — число
 const T = {
- faculties:{label:'Факультети',f:[['name','Назва'],['abbr','Скорочення'],['dean','Декан']]},
- departments:{label:'Кафедри',f:[['faculty_id','Факультет','faculties'],['name','Назва'],['abbr','Скорочення'],['head','Завідувач']]},
- programs:{label:'Освітні програми',f:[['department_id','Кафедра','departments'],['name','Назва'],['abbr','Скорочення'],['specialty_code','Код спеціальності'],['specialty_name','Спеціальність'],['education_level','Рівень'],['guarantor','Гарант']]},
- program_versions:{label:'Версії ОП (рік набору)',f:[['program_id','Програма','programs'],['entry_year','Рік набору','#']]},
- disciplines:{label:'Дисципліни',f:[['version_id','Версія ОП','program_versions'],['code','Код'],['name','Назва'],['type','Тип'],['ects','Кредити ЄКТС','#'],['language','Мова'],['control_type','Форма контролю']]},
- profiles:{label:'Користувачі',noAdd:true,noDel:true,f:[['full_name','ПІБ'],['position','Посада'],['department_id','Кафедра','departments'],['role','Роль',['teacher','admin']]]}
+ faculties:{label:'Факультети',f:[{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'dean',l:'Декан'}]},
+ departments:{label:'Кафедри',f:[{k:'faculty_id',l:'Факультет',ref:'faculties'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'head',l:'Завідувач'}]},
+ programs:{label:'Освітні програми',f:[{k:'department_id',l:'Кафедра',ref:'departments'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'specialty_code',l:'Код спеціальності'},{k:'specialty_name',l:'Спеціальність'},{k:'education_level',l:'Рівень',opts:LEVELS},{k:'guarantor',l:'Гарант'}]},
+ program_versions:{label:'Версії ОП (рік набору)',f:[{k:'program_id',l:'Програма',ref:'programs'},{k:'entry_year',l:'Рік набору',opts:YEARS}]},
+ disciplines:{label:'Дисципліни',f:[{k:'version_id',l:'Версія ОП',ref:'program_versions'},{k:'code',l:'Код'},{k:'name',l:'Назва'},{k:'type',l:'Тип'},{k:'ects',l:'Кредити ЄКТС',num:true},{k:'language',l:'Мова'},{k:'control_type',l:'Форма контролю'}]},
+ profiles:{label:'Користувачі',noAdd:true,noDel:true,f:[{k:'full_name',l:'ПІБ'},{k:'position',l:'Посада'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'role',l:'Роль',opts:['teacher','admin']}]}
 };
 const TABLES=[...Object.keys(T),'competencies','discipline_competencies','discipline_teachers'];
 const KINDS={IntegralCompetency:'IK',GeneralCompetencies:'ZK',SpecialCompetencies:'FK',LearningCompetencies:'RN'};
 const KORD=['IK','ZK','FK','RN'];
 const KL={IK:'Інтегральна',ZK:'Загальні',FK:'Спеціальні (фахові)',RN:'Результати навчання'};
+const PFX={IK:'ІК',ZK:'ЗК',FK:'ФК',RN:'РН'};
 const clean=t=>(t||'').replace(/^\s*(ІК|ЗК|ФК|ПРН|РН|Р)\.?\s?\d+\.?\s*/i,'').trim();
 
 async function all(t){let o=[],i=0;for(;;){const{data,error}=await sb.from(t).select('*').range(i,i+999);if(error)throw error;o=o.concat(data);if(data.length<1000)return o;i+=1000}}
 
 Vue.createApp({
- data(){return{T,KL,KORD,ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',msg:'',D:{},form:null,cv:'',ad:'',
+ data(){return{T,KL,KORD,ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,nc:{kind:'ZK',text:''},
   tabs:[['faculties','Факультети'],['departments','Кафедри'],['programs','Програми'],['program_versions','Версії ОП'],['comp','Компетенції'],['disciplines','Дисципліни'],['assign','Призначення'],['profiles','Користувачі']]}},
  async mounted(){const{data}=await sb.auth.getSession();await this.setSession(data.session);this.ready=true},
  computed:{
-  compList(){return(this.D.competencies||[]).filter(c=>c.version_id===this.cv).sort((a,b)=>KORD.indexOf(a.kind)-KORD.indexOf(b.kind)||a.sort-b.sort)},
+  compList(){return(this.D.competencies||[]).filter(c=>c.version_id===this.cv).sort((a,b)=>a.sort-b.sort)},
   discComps(){const d=(this.D.disciplines||[]).find(x=>x.id===this.ad);return d?(this.D.competencies||[]).filter(c=>c.version_id===d.version_id).sort((a,b)=>a.sort-b.sort):[]}
  },
  methods:{
-  go(t){this.tab=t;this.form=null;this.msg=''},
-  err(e){this.msg='Помилка: '+(e.message||e)},
+  notify(t,k='ok'){this.toast={t,k};clearTimeout(this._t);this._t=setTimeout(()=>this.toast=null,k==='err'?6000:2500)},
+  err(e){this.notify('Помилка: '+(e.message||e),'err')},
+  go(t){this.tab=t;this.form=null},
+  hint(f){return HINTS[this.tab+'.'+f.k]||''},
   async setSession(s){this.session=s;this.profile=null;if(!s)return;
    const{data}=await sb.from('profiles').select('*').eq('id',s.user.id).single();this.profile=data;
    if(data&&data.role==='admin')await this.loadAll()},
-  async login(){this.msg='';const{data,error}=await sb.auth.signInWithPassword({email:this.email,password:this.pw});
-   if(error)return this.msg='Невірний email або пароль';await this.setSession(data.session)},
+  async login(){const{data,error}=await sb.auth.signInWithPassword({email:this.email,password:this.pw});
+   if(error)return this.notify('Невірний email або пароль','err');await this.setSession(data.session)},
   async logout(){await sb.auth.signOut();await this.setSession(null)},
   async loadAll(){try{for(const t of TABLES)this.D[t]=await all(t)}catch(e){this.err(e)}},
   lab(t,r){if(!r)return'';
    if(t==='program_versions')return this.lab('programs',this.D.programs.find(p=>p.id===r.program_id))+' · '+r.entry_year;
    if(t==='disciplines')return r.name;if(t==='profiles')return r.full_name||r.id.slice(0,8);return r.abbr||r.name},
-  opts(f){return Array.isArray(f[2])?f[2].map(x=>({id:x,l:x})):(this.D[f[2]]||[]).map(r=>({id:r.id,l:this.lab(f[2],r)}))},
-  show(r,f){if(!f[2]||f[2]==='#'||Array.isArray(f[2]))return r[f[0]];return this.lab(f[2],this.D[f[2]].find(x=>x.id===r[f[0]]))},
+  opts(f){return f.opts?f.opts.map(x=>({id:x,l:x})):(this.D[f.ref]||[]).map(r=>({id:r.id,l:this.lab(f.ref,r)}))},
+  show(r,f){return f.ref?this.lab(f.ref,this.D[f.ref].find(x=>x.id===r[f.k])):r[f.k]},
   async save(){const t=this.tab,p={};
-   for(const f of T[t].f){let v=this.form[f[0]];p[f[0]]=(v===''||v===undefined)?null:v}
+   for(const f of T[t].f){let v=this.form[f.k];p[f.k]=(v===''||v===undefined)?null:v}
    const{error}=await(this.form.id?sb.from(t).update(p).eq('id',this.form.id):sb.from(t).insert(p));
-   if(error)return this.err(error);this.msg='Збережено';this.form=null;this.D[t]=await all(t)},
+   if(error)return this.err(error);this.notify('Збережено');this.form=null;this.D[t]=await all(t)},
   async del(r){if(!confirm('Видалити запис? Пов’язані дані також буде видалено.'))return;
-   const{error}=await sb.from(this.tab).delete().eq('id',r.id);if(error)return this.err(error);await this.loadAll()},
+   const{error}=await sb.from(this.tab).delete().eq('id',r.id);if(error)return this.err(error);this.notify('Видалено');await this.loadAll()},
+
+  // ---- компетенції ----
+  byKind(k){return this.compList.filter(c=>c.kind===k)},
+  async reloadComp(){this.D.competencies=await all('competencies')},
+  async addComp(){const text=(this.nc.text||'').trim(),k=this.nc.kind;
+   if(!text)return this.notify('Введіть формулювання','err');
+   let i=this.byKind(k).length+1;while(this.compList.some(c=>c.code===PFX[k]+'.'+i))i++;
+   const{error}=await sb.from('competencies').insert({version_id:this.cv,kind:k,code:PFX[k]+'.'+i,text,sort:this.compList.length?Math.max(...this.compList.map(c=>c.sort))+1:0});
+   if(error)return this.err(error);this.nc.text='';this.notify('Додано '+PFX[k]+'.'+i);await this.reloadComp()},
+  async saveComp(c){const{error}=await sb.from('competencies').update({text:c.text}).eq('id',c.id);
+   if(error)return this.err(error);this.notify('Збережено')},
+  async saveCode(c){const code=(c.code||'').trim();
+   const{error}=await sb.from('competencies').update({code}).eq('id',c.id);
+   if(error){this.notify(error.message.includes('duplicate')?'Такий код уже існує в цій версії':'Помилка: '+error.message,'err');return this.reloadComp()}
+   this.notify('Код збережено')},
+  async delComp(c){if(!confirm('Видалити '+c.code+'? Вона зникне і з усіх дисциплін.'))return;
+   const{error}=await sb.from('competencies').delete().eq('id',c.id);if(error)return this.err(error);this.notify('Видалено');await this.reloadComp()},
+  async renumber(k,order){
+   const upd=order.map((c,i)=>({c,code:PFX[k]+'.'+(i+1),sort:i})).filter(u=>u.c.code!==u.code||u.c.sort!==u.sort);
+   if(!upd.length)return;
+   // спершу тимчасові коди, щоб не порушити унікальність під час перестановки
+   const ch=upd.filter(u=>u.c.code!==u.code);
+   let r=await Promise.all(ch.map(u=>sb.from('competencies').update({code:'~'+u.c.id}).eq('id',u.c.id)));
+   r=r.concat(await Promise.all(upd.map(u=>sb.from('competencies').update({code:u.code,sort:u.sort}).eq('id',u.c.id))));
+   const bad=r.find(x=>x.error);
+   if(bad)this.err(bad.error);else this.notify('Порядок збережено, коди оновлено');
+   await this.reloadComp()},
+  async move(c,d){const l=[...this.byKind(c.kind)],i=l.findIndex(x=>x.id===c.id),j=i+d;
+   if(j<0||j>=l.length)return;[l[i],l[j]]=[l[j],l[i]];await this.renumber(c.kind,l)},
+  async dropOn(t){const dr=this.compList.find(x=>x.id===this.drag);this.drag=null;
+   if(!dr||dr.kind!==t.kind||dr.id===t.id)return;
+   const l=this.byKind(t.kind),idx=l.findIndex(x=>x.id===t.id),a=l.filter(x=>x.id!==dr.id);a.splice(idx,0,dr);
+   await this.renumber(t.kind,a)},
   async importJson(ev){const file=ev.target.files[0];if(!file)return;let j;
-   try{j=JSON.parse(await file.text())}catch(e){return this.msg='Файл не є коректним JSON'}
+   try{j=JSON.parse(await file.text())}catch(e){return this.notify('Файл не є коректним JSON','err')}
    const rows=[];for(const[key,kind]of Object.entries(KINDS))(j[key]||[]).forEach((c,i)=>rows.push({version_id:this.cv,kind,code:c.code.trim(),text:clean(c.text),sort:i}));
    const{error}=await sb.from('competencies').upsert(rows,{onConflict:'version_id,code'});
-   ev.target.value='';if(error)return this.err(error);this.msg='Імпортовано: '+rows.length;this.D.competencies=await all('competencies')},
-  async saveComp(c){const{error}=await sb.from('competencies').update({text:c.text}).eq('id',c.id);this.msg=error?'Помилка: '+error.message:'Збережено'},
-  async delComp(c){if(!confirm('Видалити '+c.code+'?'))return;const{error}=await sb.from('competencies').delete().eq('id',c.id);if(error)return this.err(error);this.D.competencies=await all('competencies')},
+   ev.target.value='';if(error)return this.err(error);this.notify('Імпортовано: '+rows.length);await this.reloadComp()},
+
+  // ---- призначення ----
   has(t,key,id){return(this.D[t]||[]).some(x=>x.discipline_id===this.ad&&x[key]===id)},
   async toggle(t,key,id,on){const row={discipline_id:this.ad,[key]:id};
    const{error}=await(on?sb.from(t).insert(row):sb.from(t).delete().match(row));
-   if(error)this.err(error);this.D[t]=await all(t)}
+   if(error)this.err(error);else this.notify('Збережено');this.D[t]=await all(t)}
  }
 }).mount('#app');
 </script>
