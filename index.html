@@ -27,7 +27,8 @@ textarea{width:100%;min-height:44px}
 h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
 .h{cursor:grab;width:24px;text-align:center;color:#889;user-select:none}
 .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99;padding:10px 18px;border-radius:6px;color:#fff;box-shadow:0 4px 14px #0004;cursor:pointer;max-width:90vw}
-.toast.ok{background:#2e7d32}.toast.err{background:#c62828}
+.toast.ok{background:#2e7d32}.toast.err{background:#c62828}.toast.warn{background:#b26a00}
+.sigprev{max-height:80px;border:1px solid #ccd;margin-top:4px;background:repeating-conic-gradient(#ddd 0 25%,#fff 0 50%) 0 0/16px 16px}
 </style>
 </head>
 <body>
@@ -94,6 +95,16 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
       <h3>Викладачі</h3>
       <small>Призначені викладачі самі заповнять години, компетенції та зміст документа.</small>
       <label class="chk" v-for="p in profs" :key="p.id"><input type="checkbox" :value="p.id" v-model="form.teachers" style="display:inline;width:auto"> {{lab('profiles',p)}} <span style="color:#889;font-size:12px">{{p.email}}</span></label>
+    </template>
+    <template v-if="T[tab].sigs&&form.id">
+      <h3>Підписи</h3>
+      <small>Фото підпису на білому аркуші або PNG. Тло прибирається автоматично. Файли зберігаються в закритому сховищі й підставляються в документ лише після дозволу у вкладці «Затвердження».</small>
+      <div v-for="sg in T[tab].sigs" :key="sg[0]" style="margin:8px 0">
+        <b>{{sg[1]}}:</b> {{sigs[sg[0]+'/'+form.id+'.png']?'✔ завантажено':'— немає'}}
+        <input type="file" accept="image/*" @change="uploadSig(sg[0],form.id,$event)" style="display:inline;width:auto">
+        <template v-if="sigs[sg[0]+'/'+form.id+'.png']"><button class="s" @click="showSig(sg[0],form.id)">Показати</button> <button class="s" @click="delSig(sg[0],form.id)">Видалити</button></template>
+        <div v-if="sigUrl[sg[0]+'/'+form.id+'.png']"><img :src="sigUrl[sg[0]+'/'+form.id+'.png']" class="sigprev"></div>
+      </div>
     </template>
     <button class="p" @click="save">Зберегти</button>
     <button class="s" @click="form=null">Скасувати</button>
@@ -225,6 +236,25 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
   </template>
 </section>
 
+<!-- Мій підпис -->
+<section v-else-if="tab==='sig'">
+  <h3>Мій підпис</h3>
+  <small>Завантажте фото підпису на білому аркуші (або PNG із прозорим тлом) — тло буде прибрано автоматично. Підпис зберігається в закритому сховищі й підставляється у ваші документи та документи співавторів.</small>
+  <p>Стан: <b>{{sigs['profile/'+session.user.id+'.png']?'✔ завантажено':'— немає'}}</b></p>
+  <p><input type="file" accept="image/*" @change="uploadSig('profile',session.user.id,$event)"></p>
+  <p v-if="sigs['profile/'+session.user.id+'.png']"><button class="s" @click="showSig('profile',session.user.id)">Показати</button> <button class="s" @click="delSig('profile',session.user.id)">Видалити</button></p>
+  <div v-if="sigUrl['profile/'+session.user.id+'.png']"><img :src="sigUrl['profile/'+session.user.id+'.png']" class="sigprev"></div>
+</section>
+
+<!-- Шаблони -->
+<section v-else-if="tab==='templates'">
+  <h3>Шаблони документів</h3>
+  <small>Файли зберігаються в закритому сховищі й доступні лише після входу в систему. Перед завантаженням перевіряється, що теги в подвійних фігурних дужках записані коректно. Новий файл замінює попередній.</small>
+  <table><tr><th>Документ</th><th>Стан</th><th>Завантажити файл (.docx)</th></tr>
+    <tr v-for="k in TPLS" :key="k[0]"><td>{{k[1]}}</td><td>{{tpl[k[0]]?'✔ завантажено '+fmt(tpl[k[0]]):'— немає'}}</td>
+      <td><input type="file" accept=".docx" @change="uploadTpl(k[0],$event)"></td></tr></table>
+</section>
+
 <!-- Затвердження -->
 <section v-else-if="tab==='approvals'">
   <h3>Дати й протоколи затвердження</h3>
@@ -234,11 +264,11 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
   <h3>Факультети</h3>
   <table><tr><th>Факультет</th><th v-for="c in APF" :key="c[0]">{{c[1]}}</th></tr>
     <tr v-for="f in D.faculties" :key="f.id"><td>{{f.name}}</td>
-      <td v-for="c in APF" :key="c[0]"><input :type="c[2]" :value="ap('faculty_approvals','faculty_id',f.id)[c[0]]" @change="setAp('faculty_approvals','faculty_id',f.id,c[0],$event.target.value)"></td></tr></table>
+      <td v-for="c in APF" :key="c[0]"><input v-if="c[2]==='checkbox'" type="checkbox" :checked="!!ap('faculty_approvals','faculty_id',f.id)[c[0]]" @change="setAp('faculty_approvals','faculty_id',f.id,c[0],$event.target.checked)"><input v-else :type="c[2]" :value="ap('faculty_approvals','faculty_id',f.id)[c[0]]" @change="setAp('faculty_approvals','faculty_id',f.id,c[0],$event.target.value)"></td></tr></table>
   <h3>Кафедри</h3>
   <table><tr><th>Кафедра</th><th v-for="c in APD" :key="c[0]">{{c[1]}}</th></tr>
     <tr v-for="d in D.departments" :key="d.id"><td>{{d.name}}</td>
-      <td v-for="c in APD" :key="c[0]"><input :type="c[2]" :value="ap('department_approvals','department_id',d.id)[c[0]]" @change="setAp('department_approvals','department_id',d.id,c[0],$event.target.value)"></td></tr></table>
+      <td v-for="c in APD" :key="c[0]"><input v-if="c[2]==='checkbox'" type="checkbox" :checked="!!ap('department_approvals','department_id',d.id)[c[0]]" @change="setAp('department_approvals','department_id',d.id,c[0],$event.target.checked)"><input v-else :type="c[2]" :value="ap('department_approvals','department_id',d.id)[c[0]]" @change="setAp('department_approvals','department_id',d.id,c[0],$event.target.value)"></td></tr></table>
 </section>
 
 <!-- Статистика -->
@@ -323,12 +353,12 @@ const YEARS=(()=>{const y=new Date().getFullYear(),a=[];for(let i=y+1;i>=2015;i-
 
 // Структура довідників. ref — вибір із іншої таблиці, opts — власний список, num — число
 const T = {
- faculties:{label:'Факультети',f:[{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'dean',l:'Декан'},{k:'method_head',l:'Голова методкомісії'}]},
- departments:{label:'Кафедри',f:[{k:'faculty_id',l:'Факультет',ref:'faculties'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'head',l:'Завідувач'}]},
- programs:{label:'Освітні програми',f:[{k:'department_id',l:'Кафедра',ref:'departments'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'specialty_code',l:'Код спеціальності'},{k:'specialty_name',l:'Спеціальність'},{k:'education_level',l:'Рівень',opts:LEVELS},{k:'guarantor',l:'Гарант'}]},
+ faculties:{label:'Факультети',sigs:[['faculty-dean','Підпис декана'],['faculty-method','Підпис голови методичної комісії']],f:[{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'dean',l:'Декан'},{k:'method_head',l:'Голова методкомісії'}]},
+ departments:{label:'Кафедри',sigs:[['department-head','Підпис завідувача кафедри']],f:[{k:'faculty_id',l:'Факультет',ref:'faculties'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'head',l:'Завідувач'}]},
+ programs:{label:'Освітні програми',sigs:[['program-guarantor','Підпис гаранта ОП']],f:[{k:'department_id',l:'Кафедра',ref:'departments'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'specialty_code',l:'Код спеціальності'},{k:'specialty_name',l:'Спеціальність'},{k:'education_level',l:'Рівень',opts:LEVELS},{k:'guarantor',l:'Гарант'}]},
  program_versions:{label:'Версії ОП (рік набору)',f:[{k:'program_id',l:'Програма',ref:'programs'},{k:'entry_year',l:'Рік набору',opts:YEARS}]},
  disciplines:{label:'Дисципліни',f:[{k:'version_id',l:'Версія ОП',ref:'program_versions'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'code',l:'Код'},{k:'name',l:'Назва'},{k:'type',l:'Тип'},{k:'ects',l:'Кредити ЄКТС',num:true},{k:'language',l:'Мова'},{k:'control_type',l:'Форма контролю'}]},
- profiles:{label:'Користувачі',noAdd:true,noDel:true,f:[{k:'email',l:'Email (для входу)',ro:true},{k:'full_name',l:'ПІБ'},{k:'full_name_long',l:'Повне ПІБ (для силабусу)'},{k:'position',l:'Посада'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'role',l:'Роль',opts:['teacher','admin']}]}
+ profiles:{label:'Користувачі',noAdd:true,noDel:true,sigs:[['profile','Підпис викладача']],f:[{k:'email',l:'Email (для входу)',ro:true},{k:'full_name',l:'ПІБ'},{k:'full_name_long',l:'Повне ПІБ (для силабусу)'},{k:'position',l:'Посада'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'role',l:'Роль',opts:['teacher','admin']}]}
 };
 const TABLES=[...Object.keys(T),'competencies','discipline_competencies','discipline_teachers','documents','faculty_approvals','department_approvals'];
 const KINDS={IntegralCompetency:'IK',GeneralCompetencies:'ZK',SpecialCompetencies:'FK',LearningCompetencies:'RN'};
@@ -336,8 +366,8 @@ const KORD=['IK','ZK','FK','RN'];
 const KL={IK:'Інтегральна',ZK:'Загальні',FK:'Спеціальні (фахові)',RN:'Результати навчання'};
 const PFX={IK:'ІК',ZK:'ЗК',FK:'ФК',RN:'РН'};
 // Поля затверджень: [колонка, підпис, тип]
-const APF=[['sign_date','Дата підпису декана («ЗАТВЕРДЖУЮ»)','date'],['protocol_date','Протокол методкомісії: дата','date'],['protocol_no','Протокол методкомісії: №','text']];
-const APD=[['protocol_date','Протокол кафедри: дата','date'],['protocol_no','Протокол кафедри: №','text'],['sign_date','Дата підпису завідувача кафедри','date']];
+const APF=[['sign_date','Дата підпису декана («ЗАТВЕРДЖУЮ»)','date'],['protocol_date','Протокол методкомісії: дата','date'],['protocol_no','Протокол методкомісії: №','text'],['signatures_enabled','Підписи декана й голови методкомісії дозволено','checkbox']];
+const APD=[['protocol_date','Протокол кафедри: дата','date'],['protocol_no','Протокол кафедри: №','text'],['sign_date','Дата підпису завідувача кафедри','date'],['signatures_enabled','Підписи завідувача й гаранта дозволено','checkbox']];
 // ---------- Документ: типові тексти, підказки, формати ----------
 // Типові тексти, якими заповнюється нова форма (викладач може змінити)
 const DEF={"TeachingMethods": "словесний, практичний, наочний, робота з навчально-методичною літературою, відеометод у сполучені з новітніми інформаційними технологіями та комп’ютерними засобами навчання.", "AssessmentTools": "залік, розрахункові роботи, аналітичні звіти, презентація результатів виконаних завдань, студентські презентації та виступи на наукових заходах.", "PolicyDeadlines": "Роботи, які здаються із порушенням термінів без поважних причин, оцінюються на нижчу оцінку (75% від можливої максимальної кількості балів за вид діяльності балів). Перескладання модулів відбувається за наявності поважних причин (наприклад, лікарняний).", "PolicyIntegrity": "Списування під час контрольних робіт заборонені (в т.ч. із використанням мобільних девайсів). Мобільні пристрої дозволяється використовувати лише під час он-лайн тестування та підготовки практичних завдань під час заняття.", "PolicyAttendance": "Відвідування занять є обов’язковим компонентом оцінювання. За об’єктивних причин (наприклад, хвороба, працевлаштування, міжнародне стажування) навчання може відбуватись в он-лайн формі за погодженням із керівником курсу."};
@@ -361,13 +391,58 @@ const tagParser=tag=>({get(scope,ctx){
     for(const k of parts){if(v==null)break;v=v[k]}
     if(v!==undefined&&v!==null)return v}
   return undefined}});
+// ---------- Підписи: обробка зображень і підстановка в docx ----------
+const ROLE_UA={DEAN:'декана',HEAD:'завідувача кафедри',GUARANTOR:'гаранта',METHOD:'голови методкомісії',AUTHOR:'розробника'};
+const BLANK_PNG=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg=='),c=>c.charCodeAt(0));   // прозорий 1×1 — «порожнє місце» під живий підпис
+function pngSize(b){const dv=new DataView(b.buffer,b.byteOffset,b.byteLength);return{w:dv.getUint32(16),h:dv.getUint32(20)}}
+// Біле тло → прозоре. Поріг підлаштовується під яскравість тла (фото, тіні). Готові PNG із прозорістю не чіпаємо.
+function inkAlpha(d){let n=0,tr=0;const hist=new Array(256).fill(0);
+ for(let i=0;i<d.length;i+=4){n++;if(d[i+3]<250)tr++;if(d[i+3]>0)hist[Math.round(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])]++}
+ if(tr/n>0.05)return;
+ let acc=0,bg=255;const tot=hist.reduce((a,b)=>a+b,0);for(let v=0;v<256;v++){acc+=hist[v];if(acc>=tot*0.85){bg=v;break}}
+ const hi=bg-12,lo=Math.max(0,hi-90);
+ for(let i=0;i<d.length;i+=4){const a0=d[i+3];if(!a0)continue;const lum=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+  d[i+3]=Math.round(a0*Math.max(0,Math.min(1,(hi-lum)/(hi-lo))))}}
+function inkBounds(d,w,h){let x0=w,y0=h,x1=-1,y1=-1;
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(d[(y*w+x)*4+3]>25){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+ return x1<0?null:{x0,y0,x1,y1}}
+async function processSignature(file){
+ if(file.size>8*1024*1024)throw new Error('Файл завеликий (понад 8 МБ)');
+ const bm=await createImageBitmap(file),sc=Math.min(1,1600/Math.max(bm.width,bm.height)),w=Math.round(bm.width*sc),h=Math.round(bm.height*sc);
+ const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d',{willReadFrequently:true});g.drawImage(bm,0,0,w,h);
+ const im=g.getImageData(0,0,w,h);inkAlpha(im.data);g.putImageData(im,0,0);
+ const b=inkBounds(im.data,w,h);if(!b)throw new Error('На зображенні не знайдено підпису (занадто світлий або порожній файл)');
+ const m=6,x0=Math.max(0,b.x0-m),y0=Math.max(0,b.y0-m),cw=Math.min(w,b.x1+m)-x0,ch=Math.min(h,b.y1+m)-y0,k=Math.min(1,300/ch);
+ const o=document.createElement('canvas');o.width=Math.max(1,Math.round(cw*k));o.height=Math.max(1,Math.round(ch*k));
+ o.getContext('2d').drawImage(c,x0,y0,cw,ch,0,0,o.width,o.height);
+ return new Promise(r=>o.toBlob(r,'image/png'))}
+// Кілька підписів (співавтори) в один рядок
+async function joinSignatures(blobs){const bm=await Promise.all(blobs.map(b=>createImageBitmap(b)));
+ const H=Math.max(...bm.map(b=>b.height)),gap=Math.round(H*0.15),ws=bm.map(b=>Math.round(b.width*H/b.height));
+ const c=document.createElement('canvas');c.width=ws.reduce((a,b)=>a+b,0)+gap*(bm.length-1);c.height=H;
+ const g=c.getContext('2d');let x=0;bm.forEach((b,i)=>{g.drawImage(b,x,0,ws[i],H);x+=ws[i]+gap});
+ return new Promise(r=>c.toBlob(r,'image/png'))}
+// Підміна заглушок-підписів у docx (зображення з docPr name="SIGN_РОЛЬ"). imgs: {РОЛЬ:{bytes,w,h}|відсутня}
+function applySignatures(out,imgs){
+ let xml=out.file('word/document.xml').asText();const rels=out.file('word/_rels/document.xml.rels').asText(),used=[];
+ xml=xml.replace(/<w:drawing>[\s\S]*?<\/w:drawing>/g,block=>{
+  const m=block.match(/<wp:docPr[^>]*name="SIGN_([A-Z]+)"/);if(!m)return block;
+  const role=m[1],rid=(block.match(/r:embed="([^"]+)"/)||[])[1];if(!rid)return block;
+  const rm=rels.match(new RegExp('<Relationship [^>]*Id="'+rid+'"[^>]*>')),tg=rm&&rm[0].match(/Target="([^"]+)"/);if(!tg)return block;
+  const file='word/'+tg[1],e=block.match(/<wp:extent cx="(\d+)" cy="(\d+)"/),W0=+e[1],H0=+e[2],img=imgs[role];
+  if(!img){out.file(file,BLANK_PNG);return block}
+  const maxW=role==='AUTHOR'?Math.max(W0,1620000):W0,k=Math.min(maxW/img.w,H0/img.h),cx=Math.round(img.w*k),cy=Math.round(img.h*k);
+  out.file(file,img.bytes);used.push(role);
+  return block.replace(/<wp:extent cx="\d+" cy="\d+"\/>/,'<wp:extent cx="'+cx+'" cy="'+cy+'"/>')
+   .replace(/(<a:xfrm[^>]*>[\s\S]*?)<a:ext cx="\d+" cy="\d+"\/>/,'$1<a:ext cx="'+cx+'" cy="'+cy+'"/>')});
+ out.file('word/document.xml',xml);return used}
 const clean=t=>(t||'').replace(/^\s*(ІК|ЗК|ФК|ПРН|РН|Р)\.?\s?\d+\.?\s*/i,'').trim();
 
 async function all(t){let o=[],i=0;for(;;){const{data,error}=await sb.from(t).select('*').range(i,i+999);if(error)throw error;o=o.concat(data);if(data.length<1000)return o;i+=1000}}
 
 Vue.createApp({
- data(){return{T,KL,KORD,HOURS,HF,LISTS,TXT1,TXT2,EX,dsel:'',dd:null,dstate:'',xsrc:'',xclone:'',xopt:{doc:true,comps:true,params:false},XST:{exact:'✔ без змін',moved:'↔ змінився код',reworded:'✎ змінилось формулювання',missing:'✖ немає в цій версії — не буде перенесена'},YEARS,APF,APD,ay:new Date().getFullYear(),ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,sv:'',nc:{kind:'ZK',text:''},
-  tabs:[['faculties','Факультети'],['departments','Кафедри'],['programs','Програми'],['program_versions','Версії ОП'],['comp','Компетенції'],['disciplines','Дисципліни'],['assign','Призначення'],['doc','Документ'],['approvals','Затвердження'],['stats','Статистика'],['profiles','Користувачі']]}},
+ data(){return{T,KL,KORD,HOURS,HF,LISTS,TXT1,TXT2,EX,dsel:'',dd:null,dstate:'',tpl:{},TPLS:[['rpnd','РПНД'],['syllabus','Силабус']],sigs:{},sigUrl:{},xsrc:'',xclone:'',xopt:{doc:true,comps:true,params:false},XST:{exact:'✔ без змін',moved:'↔ змінився код',reworded:'✎ змінилось формулювання',missing:'✖ немає в цій версії — не буде перенесена'},YEARS,APF,APD,ay:new Date().getFullYear(),ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,sv:'',nc:{kind:'ZK',text:''},
+  tabs:[['faculties','Факультети'],['departments','Кафедри'],['programs','Програми'],['program_versions','Версії ОП'],['comp','Компетенції'],['disciplines','Дисципліни'],['assign','Призначення'],['doc','Документ'],['approvals','Затвердження'],['templates','Шаблони'],['sig','Мій підпис'],['stats','Статистика'],['profiles','Користувачі']]}},
  async mounted(){const{data}=await sb.auth.getSession();await this.setSession(data.session);this.ready=true},
  watch:{
   dsel(){this._lp=this.loadDoc();this.xsrc=''},
@@ -453,6 +528,7 @@ Vue.createApp({
     DisciplineCodeName:[d.code?d.code.trim().replace(/\.?$/,'.'):'',d.name].filter(Boolean).join(' '),
     StructureLine:parts.join(', '),TotalLine:q.total?'Всього – '+q.total+' год.':'',
     ScheduleLine:[q.year?'Курс – '+q.year:'',q.semester?'семестр навчання – '+q.semester+'-й':''].filter(Boolean).join(', '),AuthorsList,
+    SigFlags:{fac:!!fa.signatures_enabled,dep:!!da.signatures_enabled},
     IntegralCompetency:byKind('IK'),GeneralCompetencies:byKind('ZK'),SpecialCompetencies:byKind('FK'),LearningCompetencies:byKind('RN'),
     modules,semester:{day:R(c.sem.day),part:R(c.sem.part)},
     practicals:lst('practicals'),PracticalsTotal:z(c.lists.practicals),labs:lst('labs'),LabsTotal:z(c.lists.labs),selfstudy:lst('selfstudy'),SelfStudyTotal:z(c.lists.selfstudy),
@@ -470,9 +546,11 @@ Vue.createApp({
     .forEach(([k,l])=>{if(!c[k])m.push(l+' за '+y+' рік — не внесено адміністратором')});
    this.D.discipline_teachers.filter(x=>x.discipline_id===this.dsel).map(x=>this.D.profiles.find(p=>p.id===x.user_id)).filter(p=>p&&!p.full_name)
     .forEach(p=>m.push('У викладача '+(p.email||'')+' не вказано ПІБ (адмін заповнює у вкладці «Користувачі»)'));
+   if(!c.SigFlags.fac)m.push('Підписи декана й голови методкомісії за '+y+' рік не дозволені адміністратором — місця під них лишаться порожніми');
+   if(!c.SigFlags.dep)m.push('Підписи завідувача кафедри й гаранта за '+y+' рік не дозволені адміністратором — місця під них лишаться порожніми');
    if(!c.GeneralCompetencies.length&&!c.SpecialCompetencies.length)m.push('Не обрано компетенції (вкладка «Компетенції»)');
    return m.concat(this.calc.warns)},
-  visibleTabs(){return this.isAdmin?this.tabs:[['disciplines','Мої дисципліни'],['assign','Компетенції'],['doc','Документ']]},
+  visibleTabs(){return this.isAdmin?this.tabs:[['disciplines','Мої дисципліни'],['assign','Компетенції'],['doc','Документ'],['sig','Мій підпис']]},
   statRows(){return(this.D.disciplines||[]).filter(d=>!this.sv||d.version_id===this.sv).map(d=>{
     const doc=this.docOf(d),ver=this.lab('program_versions',this.D.program_versions.find(v=>v.id===d.version_id));
     return{d,ver,teachers:this.authors(d.id,true),rpnd:doc&&doc.rpnd_done_at,syl:doc&&doc.syllabus_done_at}})
@@ -481,7 +559,7 @@ Vue.createApp({
   discComps(){const d=(this.D.disciplines||[]).find(x=>x.id===this.ad);return d?(this.D.competencies||[]).filter(c=>c.version_id===d.version_id).sort((a,b)=>a.sort-b.sort):[]}
  },
  methods:{
-  notify(t,k='ok'){this.toast={t,k};clearTimeout(this._t);this._t=setTimeout(()=>this.toast=null,k==='err'?6000:2500)},
+  notify(t,k='ok'){this.toast={t,k};clearTimeout(this._t);this._t=setTimeout(()=>this.toast=null,k==='ok'?2500:6000)},
   err(e){const m=e.message||String(e);this.notify(m.includes('coerce')||m.includes('row-level')?'Немає прав на цю дію':'Помилка: '+m,'err')},
   go(t){this.tab=t;this.form=null},
   prep(f){if(this.tab==='disciplines'){if(!f.id&&!f.department_id)f.department_id=this.profile.department_id||null;f.params=f.params||{};f.params.day=f.params.day||{};f.params.part=f.params.part||{};f.teachers=(this.D.discipline_teachers||[]).filter(x=>x.discipline_id===f.id).map(x=>x.user_id)}return f},
@@ -493,7 +571,7 @@ Vue.createApp({
   hint(f){return HINTS[this.tab+'.'+f.k]||''},
   async setSession(s){this.session=s;this.profile=null;if(!s)return;
    const{data}=await sb.from('profiles').select('*').eq('id',s.user.id).single();this.profile=data;
-   if(data){this.tab=data.role==='admin'?'faculties':'disciplines';await this.loadAll()}},
+   if(data){this.tab=data.role==='admin'?'faculties':'disciplines';await this.loadAll();this.loadSigs();if(data.role==='admin')this.loadTpl()}},
   async login(){const{data,error}=await sb.auth.signInWithPassword({email:this.email,password:this.pw});
    if(error)return this.notify('Невірний email або пароль','err');await this.setSession(data.session)},
   async logout(){await sb.auth.signOut();await this.setSession(null)},
@@ -576,10 +654,49 @@ Vue.createApp({
   addIndividual(){this.dd.modules.push({ind:true,name:'Індивідуальні завдання',topics:[{title:'',description:'',day:{},part:{}}]})},
   addTopic(m){m.topics.push({title:'',description:'',day:{},part:{}})},
   topicNo(mi,ti){let n=0;for(let i=0;i<mi;i++)n+=this.dd.modules[i].topics.length;return n+ti+1},
+  sigKey(f,id){return f+'/'+id+'.png'},
+  async loadSigs(){const m={};
+   for(const f of['profile','faculty-dean','faculty-method','department-head','program-guarantor']){
+    const{data}=await sb.storage.from('signatures').list(f,{limit:1000});(data||[]).forEach(o=>{m[f+'/'+o.name]=true})}
+   this.sigs=m},
+  async uploadSig(f,id,ev){const file=ev.target.files[0];ev.target.value='';if(!file)return;
+   try{const blob=await processSignature(file),path=this.sigKey(f,id);
+    const{error}=await sb.storage.from('signatures').upload(path,blob,{upsert:true,contentType:'image/png'});if(error)throw error;
+    this.sigs={...this.sigs,[path]:true};this.sigUrl={...this.sigUrl,[path]:URL.createObjectURL(blob)};this.notify('Підпис збережено (тло прибрано автоматично)')}
+   catch(e){this.notify('Не вдалося зберегти підпис: '+(e.message||e),'err')}},
+  async showSig(f,id){const path=this.sigKey(f,id),{data,error}=await sb.storage.from('signatures').download(path);
+   if(error||!data)return this.notify('Підпис не знайдено або немає доступу','err');this.sigUrl={...this.sigUrl,[path]:URL.createObjectURL(data)}},
+  async delSig(f,id){if(!confirm('Видалити підпис?'))return;const path=this.sigKey(f,id),{error}=await sb.storage.from('signatures').remove([path]);
+   if(error)return this.err(error);const a={...this.sigs},u={...this.sigUrl};delete a[path];delete u[path];this.sigs=a;this.sigUrl=u;this.notify('Підпис видалено')},
+  // Завантаження підписів для документа: керівники — лише якщо адмін дозволив на цей рік; автори — власні підписи
+  async sigImages(){const D=this.D,d=this.curDisc,y=this.dd.year;
+   const dep=D.departments.find(x=>x.id===d.department_id)||{},fac=D.faculties.find(x=>x.id===dep.faculty_id)||{};
+   const ver=D.program_versions.find(v=>v.id===d.version_id)||{},prog=D.programs.find(x=>x.id===ver.program_id)||{};
+   const fa=D.faculty_approvals.find(x=>x.faculty_id===fac.id&&x.year===y)||{},da=D.department_approvals.find(x=>x.department_id===dep.id&&x.year===y)||{};
+   const want={};
+   if(fa.signatures_enabled&&fac.id){want.DEAN=['faculty-dean/'+fac.id+'.png'];want.METHOD=['faculty-method/'+fac.id+'.png']}
+   if(da.signatures_enabled&&dep.id){want.HEAD=['department-head/'+dep.id+'.png'];if(prog.id)want.GUARANTOR=['program-guarantor/'+prog.id+'.png']}
+   want.AUTHOR=D.discipline_teachers.filter(x=>x.discipline_id===d.id).map(x=>D.profiles.find(p=>p.id===x.user_id)).filter(p=>p&&p.full_name).map(p=>'profile/'+p.id+'.png');
+   const imgs={},noFile=[];
+   for(const[role,paths]of Object.entries(want)){const parts=[];
+    for(const pth of paths){const{data}=await sb.storage.from('signatures').download(pth);if(data)parts.push(data)}
+    if(!parts.length){noFile.push(role);continue}
+    const blob=parts.length===1?parts[0]:await joinSignatures(parts),bytes=new Uint8Array(await blob.arrayBuffer());
+    imgs[role]={bytes,...pngSize(bytes)}}
+   return{imgs,noFile}},
+  async loadTpl(){const{data,error}=await sb.storage.from('templates').list('');if(error)return;
+   const t={};(data||[]).forEach(f=>{t[f.name.replace(/\.docx$/,'')]=f.updated_at||f.created_at});this.tpl=t},
+  async uploadTpl(kind,ev){const f=ev.target.files[0];if(!f)return;
+   try{const doc=new window.docxtemplater(new PizZip(await f.arrayBuffer()),{parser:tagParser,delimiters:{start:'{{',end:'}}'},paragraphLoop:true,linebreaks:true});
+    const n=(doc.getFullText().match(/\{\{/g)||[]).length;
+    const{error}=await sb.storage.from('templates').upload(kind+'.docx',f,{upsert:true,contentType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+    if(error)throw error;await this.loadTpl();this.notify('Шаблон завантажено (знайдено тегів: '+n+')')}
+   catch(e){const er=e.properties&&e.properties.errors;this.notify('Файл не прийнято: '+(er?er.map(x=>x.properties.explanation).join('; '):(e.message||e)),'err')}
+   ev.target.value=''},
   async download(kind){
    try{const ctx=JSON.parse(JSON.stringify(this.ctx));
-    const r=await fetch(kind+'.docx?v='+Date.now());if(!r.ok)throw new Error('Не знайдено файл шаблону '+kind+'.docx у репозиторії');
-    const doc=new window.docxtemplater(new PizZip(await r.arrayBuffer()),{parser:tagParser,delimiters:{start:'{{',end:'}}'},paragraphLoop:true,linebreaks:true,nullGetter:()=>''});
+    const{data:tb,error:te}=await sb.storage.from('templates').download(kind+'.docx');if(te||!tb)throw new Error('Шаблон не завантажено в систему — зверніться до адміністратора');
+    const doc=new window.docxtemplater(new PizZip(await tb.arrayBuffer()),{parser:tagParser,delimiters:{start:'{{',end:'}}'},paragraphLoop:true,linebreaks:true,nullGetter:()=>''});
     doc.render(ctx);
     const out=doc.getZip();let xml=out.file('word/document.xml').asText();
     // прибираємо порожні об'єднані рядки (блок балів без назви)
@@ -588,24 +705,26 @@ Vue.createApp({
      const text=(row.match(/<w:t(?:\s[^>]*)?>[^<]*/g)||[]).join('').replace(/<w:t[^>]*>/g,'').trim();
      return(row.includes('§§DEL§§')||(cells===1&&/gridSpan/.test(row)&&!text))?'':row});
     out.file('word/document.xml',xml);
+    let noFile=[];
+    if(kind==='rpnd'){const sg=await this.sigImages();noFile=sg.noFile;applySignatures(out,sg.imgs)}
     const blob=out.generate({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);
     a.download=(kind==='rpnd'?'РПНД':'Силабус')+' '+this.curDisc.name.replace(/[\\/:*?"<>|]/g,'')+' '+this.dd.year+'.docx';
-    a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);this.notify('Файл сформовано')}
+    a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);this.notify(noFile.length?'Файл сформовано. Підпис не завантажено: '+noFile.map(r=>ROLE_UA[r]).join(', '):'Файл сформовано',noFile.length?'warn':'ok')}
    catch(e){const er=e.properties&&e.properties.errors;this.notify('Не вдалося сформувати файл: '+(er?er.map(x=>x.properties.explanation).join('; '):e.message),'err')}},
   ap(t,key,id){return(this.D[t]||[]).find(x=>x[key]===id&&x.year===this.ay)||{}},
   async setAp(t,key,id,col,val){
-   const{error}=await sb.from(t).upsert({[key]:id,year:this.ay,[col]:val||null},{onConflict:key+',year'});
+   const{error}=await sb.from(t).upsert({[key]:id,year:this.ay,[col]:(typeof val==='boolean')?val:(val||null)},{onConflict:key+',year'});
    if(error)return this.err(error);this.notify('Збережено');this.D[t]=await all(t)},
   async copyPrev(){
    const shift=v=>(v&&/^\d{4}-/.test(v))?(+v.slice(0,4)+1)+v.slice(4):v;
    for(const[t,key]of[['faculty_approvals','faculty_id'],['department_approvals','department_id']]){
     const have=new Set(this.D[t].filter(x=>x.year===this.ay).map(x=>x[key]));
     const rows=this.D[t].filter(x=>x.year===this.ay-1&&!have.has(x[key])).map(x=>{const{id,...r}=x;
-     return{...r,year:this.ay,sign_date:shift(r.sign_date),protocol_date:shift(r.protocol_date)}});
+     return{...r,year:this.ay,sign_date:shift(r.sign_date),protocol_date:shift(r.protocol_date),signatures_enabled:false}});
     if(rows.length){const{error}=await sb.from(t).insert(rows);if(error)return this.err(error)}
     this.D[t]=await all(t)}
-   this.notify('Скопійовано з '+(this.ay-1)+' року. Перевірте дати.')},
+   this.notify('Скопійовано з '+(this.ay-1)+' року. Перевірте дати; дозвіл на підписи скинуто — увімкніть його, коли документи затверджено.')},
   fmt(iso){return new Date(iso).toLocaleDateString('uk-UA')},
   docOf(d){return(this.D.documents||[]).find(x=>x.discipline_id===d.id)},
   flag(d,col){const x=this.docOf(d);return x?x[col]:null},
