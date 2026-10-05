@@ -148,10 +148,28 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
   <select v-model="dsel"><option value="">— оберіть дисципліну —</option>
     <option v-for="d in rowsOf('disciplines')" :key="d.id" :value="d.id">{{d.name}} ({{lab('program_versions',D.program_versions.find(v=>v.id===d.version_id))}})</option></select>
   <template v-if="dd&&curDisc">
-    <p><button class="p" @click="download('rpnd')">⬇ Завантажити РПНД (.docx)</button> <b>{{dstate}}</b></p>
+    <p><button class="p" @click="download('rpnd')">⬇ Завантажити РПНД (.docx)</button> <button class="p" @click="download('syllabus')">⬇ Завантажити силабус (.docx)</button> <b>{{dstate}}</b></p>
     <div v-if="missing.length" class="card" style="background:#fff3cd"><b>Перевірте перед завантаженням:</b>
       <ul><li v-for="m in missing" :key="m">{{m}}</li></ul></div>
     <p v-else style="color:#2e7d32">✔ Усе заповнено, години відповідають опису дисципліни</p>
+
+    <details class="card"><summary><b>Перенести з іншої дисципліни / року</b></summary>
+      <small>Працює в обидва боки: можна взяти дані з минулого року або з майбутнього (наприклад, коли документ за попередній рік потрібно скласти постфактум). Компетенції зіставляються за формулюванням, потім за кодом.</small>
+      <p>Джерело: <select v-model="xsrc"><option value="">— оберіть —</option>
+        <option v-for="x in xsources" :key="x.id" :value="x.id">{{x.name}} — {{lab('program_versions',D.program_versions.find(v=>v.id===x.version_id))}}</option></select></p>
+      <template v-if="xmap">
+        <table><tr><th>Було</th><th>Стане</th><th>Статус</th></tr>
+          <tr v-for="m in xmap" :key="m.src.id"><td><b>{{m.src.code}}</b> {{m.src.text}}</td><td><span v-if="m.dst"><b>{{m.dst.code}}</b> {{m.dst.text}}</span><span v-else>—</span></td><td>{{XST[m.st]}}</td></tr></table>
+        <label class="chk"><input type="checkbox" v-model="xopt.doc"> Зміст документа (структура, тексти, література…)</label>
+        <label class="chk"><input type="checkbox" v-model="xopt.comps"> Вибір компетенцій (за таблицею вище)</label>
+        <label class="chk"><input type="checkbox" v-model="xopt.params"> Години з опису дисципліни</label>
+        <button class="p" @click="transfer(xsrc,xopt)">Перенести</button>
+      </template>
+      <hr>
+      <p>Або створити копію цієї дисципліни в іншій версії ОП: <select v-model="xclone"><option value="">— оберіть версію —</option>
+        <option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option></select>
+        <button class="s" @click="cloneTo">Створити копію й перенести дані</button></p>
+    </details>
 
     <details open class="card form"><summary><b>1–2. Мета, результати, передумови</b></summary>
       <label>Рік складання РПНД<select v-model.number="dd.year"><option v-for="y in YEARS" :key="y" :value="y">{{y}}</option></select></label>
@@ -162,23 +180,23 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
     <details open class="card"><summary><b>4. Структура навчальної дисципліни</b></summary>
       <small>Вводьте лише лекції, практичні, лабораторні, консультації та самостійну роботу. «Усього» та підсумки рахуються автоматично й перевіряються за описом дисципліни. Теми нумеруються наскрізь.</small>
       <div v-for="(m,mi) in dd.modules" :key="mi" style="border:1px solid #cdd;border-radius:6px;padding:8px;margin:10px 0;overflow-x:auto">
-        <p><b v-if="!m.ind">Змістовий модуль {{mi+1}}.</b> <input v-model="m.name" :placeholder="m.ind?'Індивідуальні завдання':'Назва модуля'" style="width:55%">
+        <p><b v-if="!m.ind">Змістовний модуль {{mi+1}}.</b> <input v-model="m.name" :placeholder="m.ind?'Індивідуальні завдання':'Назва модуля'" style="width:55%">
           <button class="s" v-if="!m.ind" @click="mv(dd.modules,mi,-1)">↑</button><button class="s" v-if="!m.ind" @click="mv(dd.modules,mi,1)">↓</button><button class="s" @click="rm(dd.modules,mi,true)">✕</button></p>
         <table>
           <tr><th>Тема</th><template v-for="fm in forms" :key="fm"><th v-for="h in HF" :key="h[0]">{{h[1]}}{{fm==='part'?' (з)':''}}</th><th>Усього{{fm==='part'?' (з)':''}}</th></template><th></th></tr>
           <tr v-for="(t,ti) in m.topics" :key="ti">
-            <td style="min-width:260px"><b>Тема {{topicNo(mi,ti)}}.</b> <input v-model="t.title" placeholder="Назва теми" style="width:85%">
+            <td style="min-width:260px"><b v-if="!m.ind">Тема {{topicNo(mi,ti)}}.</b> <input v-model="t.title" :placeholder="m.ind?'Напр.: Індивідуальне графічне завдання та реферативні завдання':'Назва теми'" style="width:85%">
               <textarea v-model="t.description" rows="1" placeholder="Опис теми для розділу 3 (необов’язково)"></textarea></td>
             <template v-for="fm in forms" :key="fm"><td v-for="h in HF" :key="h[0]"><input type="number" min="0" step="any" v-model.number="t[fm][h[0]]" style="width:52px"></td><td><b>{{calc.mods[mi].topics[ti][fm].total}}</b></td></template>
             <td style="white-space:nowrap"><button class="s" @click="mv(m.topics,ti,-1)">↑</button><button class="s" @click="mv(m.topics,ti,1)">↓</button><button class="s" @click="rm(m.topics,ti)">✕</button></td>
           </tr>
-          <tr style="background:#eef"><td><b>{{m.ind?'Разом за індивідуальними завданнями':'Разом за модулем '+(mi+1)}}</b></td><template v-for="fm in forms" :key="fm"><td v-for="h in HF" :key="h[0]">{{calc.mods[mi].sum[fm][h[0]]}}</td><td><b>{{calc.mods[mi].sum[fm].total}}</b></td></template><td></td></tr>
+          <tr v-if="!m.ind" style="background:#eef"><td><b>Разом за модулем {{mi+1}}</b></td><template v-for="fm in forms" :key="fm"><td v-for="h in HF" :key="h[0]">{{calc.mods[mi].sum[fm][h[0]]}}</td><td><b>{{calc.mods[mi].sum[fm].total}}</b></td></template><td></td></tr>
         </table>
         <button class="s" @click="addTopic(m)">+ Тема</button>
       </div>
-      <button class="s" @click="addModule">+ Змістовий модуль</button>
+      <button class="s" @click="addModule">+ Змістовний модуль</button>
       <button class="s" v-if="!dd.modules.some(m=>m.ind)" @click="addIndividual">+ Індивідуальні завдання</button>
-      <small>«Індивідуальні завдання» — необов’язковий блок наприкінці, схожий на модуль: у структурі, розділі 3 й підсумках семестру він враховується, а в кількість змістових модулів — ні.</small>
+      <small>«Індивідуальні завдання» — необов’язковий блок наприкінці, схожий на модуль: у структурі, розділі 3 й підсумках семестру він враховується, а в кількість змістовних модулів — ні. Підсумкового рядка й нумерації тем немає: назву пишіть так, як вона має стояти в документі (за потреби — з номером). Години входять у «Усього годин за семестр».</small>
       <table style="margin-top:10px"><tr style="background:#dde"><td><b>Усього годин за семестр</b></td><template v-for="fm in forms" :key="fm"><td v-for="h in HF" :key="h[0]">{{calc.sem[fm][h[0]]}}</td><td><b>{{calc.sem[fm].total}}</b></td></template></tr></table>
     </details>
 
@@ -190,7 +208,7 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
     </details>
 
     <details class="card"><summary><b>9.1 Розподіл балів</b></summary>
-      <small>Блок — це змістовий модуль із видами робіт і балами. Назву блока можна залишити порожньою (наприклад, для індивідуального завдання) — тоді рядка заголовка не буде.</small>
+      <small>Блок — це змістовний модуль із видами робіт і балами. Назву блока можна залишити порожньою (наприклад, для індивідуального завдання) — тоді рядка заголовка не буде.</small>
       <div v-for="(b,bi) in dd.blocks" :key="bi" style="border:1px solid #cdd;border-radius:6px;padding:8px;margin:8px 0">
         <input v-model="b.title" placeholder="Назва блока, напр.: 1-й змістовний модуль" style="width:60%">
         <button class="s" @click="mv(dd.blocks,bi,-1)">↑</button><button class="s" @click="mv(dd.blocks,bi,1)">↓</button><button class="s" @click="rm(dd.blocks,bi,true)">✕</button>
@@ -294,6 +312,7 @@ const HINTS = {
  'faculties.method_head': 'Голова методичної комісії факультету. Формат: Ім’я ПРІЗВИЩЕ.',
  'disciplines.department_id': 'Кафедра, яка розробляє дисципліну й затверджує РПНД. За замовчуванням — кафедра автора.',
  'profiles.full_name': 'Формат: Ім’я ПРІЗВИЩЕ — саме так воно буде в документі. Без ПІБ викладача не видно в списках.',
+ 'profiles.full_name_long': 'Для силабусу: Прізвище Ім’я По батькові, напр.: Солодов Віталій Дмитрович.',
  'profiles.position': 'Посада, напр.: доцент.',
  'profiles.role': 'admin керує довідниками; teacher працює лише зі своїми дисциплінами.'
 };
@@ -309,7 +328,7 @@ const T = {
  programs:{label:'Освітні програми',f:[{k:'department_id',l:'Кафедра',ref:'departments'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'specialty_code',l:'Код спеціальності'},{k:'specialty_name',l:'Спеціальність'},{k:'education_level',l:'Рівень',opts:LEVELS},{k:'guarantor',l:'Гарант'}]},
  program_versions:{label:'Версії ОП (рік набору)',f:[{k:'program_id',l:'Програма',ref:'programs'},{k:'entry_year',l:'Рік набору',opts:YEARS}]},
  disciplines:{label:'Дисципліни',f:[{k:'version_id',l:'Версія ОП',ref:'program_versions'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'code',l:'Код'},{k:'name',l:'Назва'},{k:'type',l:'Тип'},{k:'ects',l:'Кредити ЄКТС',num:true},{k:'language',l:'Мова'},{k:'control_type',l:'Форма контролю'}]},
- profiles:{label:'Користувачі',noAdd:true,noDel:true,f:[{k:'email',l:'Email (для входу)',ro:true},{k:'full_name',l:'ПІБ'},{k:'position',l:'Посада'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'role',l:'Роль',opts:['teacher','admin']}]}
+ profiles:{label:'Користувачі',noAdd:true,noDel:true,f:[{k:'email',l:'Email (для входу)',ro:true},{k:'full_name',l:'ПІБ'},{k:'full_name_long',l:'Повне ПІБ (для силабусу)'},{k:'position',l:'Посада'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'role',l:'Роль',opts:['teacher','admin']}]}
 };
 const TABLES=[...Object.keys(T),'competencies','discipline_competencies','discipline_teachers','documents','faculty_approvals','department_approvals'];
 const KINDS={IntegralCompetency:'IK',GeneralCompetencies:'ZK',SpecialCompetencies:'FK',LearningCompetencies:'RN'};
@@ -325,6 +344,8 @@ const DEF={"TeachingMethods": "словесний, практичний, нао�
 // Приклади (з шаблону) — показуються як підказка в порожніх полях
 const EX={"RequiredKnowledge": "Теоретичні основи комп’ютерної графіки, основні принципи цифрового відображення світла, кольору та побудови анімаційних об’єктів, правила створення анімації тривимірних моделей та рендеринг.", "RequiredSkills": "Використовувати програмні пакети для обробки тривимірної графіки та анімації тривимірних моделей.", "CriteriaSatisfactory": "Засвоїти мінімум знань і умінь. Відпрацювати та захистити всі лабораторні роботи. Виконання реферативної роботи.", "CriteriaGood": "Твердо засвоїти мінімум теоретичних знань. Відпрацювати та захистити всі лабораторні роботи. Уміти створювати прості тривимірні анімації з використанням шаблонів. Виконання реферативної роботи з публікацією в науковому журналі.", "CriteriaExcellent": "Засвоїти всі теми. Відпрацювати та захистити всі лабораторні роботи. Уміти створювати власні складні тривимірні анімаційні сцени. Виконання реферативної роботи з публікацією в науковому журналі та виконання індивідуального графічного завдання.", "Software": "створення «Комп’ютерної анімації»3D MAYA."};
 const LVL={'бакалаврський':'Бакалавр','магістерський':'Магістр','освітньо-науковий':'Освітньо-наук.'};
+const LEVEL_NAME={'бакалаврський':'Бакалавр','магістерський':'Магістр','освітньо-науковий':'Доктор філософії'};
+const RN_LABEL='РН';   // як позначати результати навчання: 'РН' → РН1.  або 'Р' → Р1.
 const MON=['січня','лютого','березня','квітня','травня','червня','липня','серпня','вересня','жовтня','листопада','грудня'];
 const dshort=v=>v?v.split('-').reverse().join('.'):'';                       // 30.08.2025
 const dlong=v=>{if(!v)return'';const[y,m,d]=v.split('-');return '«'+d+'» '+MON[+m-1]+' '+y};  // «30» серпня 2025
@@ -345,11 +366,11 @@ const clean=t=>(t||'').replace(/^\s*(ІК|ЗК|ФК|ПРН|РН|Р)\.?\s?\d+\.?\
 async function all(t){let o=[],i=0;for(;;){const{data,error}=await sb.from(t).select('*').range(i,i+999);if(error)throw error;o=o.concat(data);if(data.length<1000)return o;i+=1000}}
 
 Vue.createApp({
- data(){return{T,KL,KORD,HOURS,HF,LISTS,TXT1,TXT2,EX,dsel:'',dd:null,dstate:'',YEARS,APF,APD,ay:new Date().getFullYear(),ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,sv:'',nc:{kind:'ZK',text:''},
+ data(){return{T,KL,KORD,HOURS,HF,LISTS,TXT1,TXT2,EX,dsel:'',dd:null,dstate:'',xsrc:'',xclone:'',xopt:{doc:true,comps:true,params:false},XST:{exact:'✔ без змін',moved:'↔ змінився код',reworded:'✎ змінилось формулювання',missing:'✖ немає в цій версії — не буде перенесена'},YEARS,APF,APD,ay:new Date().getFullYear(),ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,sv:'',nc:{kind:'ZK',text:''},
   tabs:[['faculties','Факультети'],['departments','Кафедри'],['programs','Програми'],['program_versions','Версії ОП'],['comp','Компетенції'],['disciplines','Дисципліни'],['assign','Призначення'],['doc','Документ'],['approvals','Затвердження'],['stats','Статистика'],['profiles','Користувачі']]}},
  async mounted(){const{data}=await sb.auth.getSession();await this.setSession(data.session);this.ready=true},
  watch:{
-  dsel(){this.loadDoc()},
+  dsel(){this._lp=this.loadDoc();this.xsrc=''},
   dd:{deep:true,handler(){if(!this.dd||JSON.stringify(this.dd)===this._saved)return;
    this.dstate='Зберігається…';clearTimeout(this._dt);this._dt=setTimeout(()=>this.saveDoc(),1500)}}
  },
@@ -357,6 +378,9 @@ Vue.createApp({
   isAdmin(){return !!this.profile&&this.profile.role==='admin'},
   versions(){return[...(this.D.program_versions||[])].sort((a,b)=>this.lab('program_versions',a).localeCompare(this.lab('program_versions',b),'uk'))},
   profs(){return[...(this.D.profiles||[])].sort((a,b)=>this.lab('profiles',a).localeCompare(this.lab('profiles',b),'uk'))},
+  xsources(){const t=this.curDisc;if(!t)return[];const vl=x=>this.lab('program_versions',this.D.program_versions.find(v=>v.id===x.version_id));
+   return this.rowsOf('disciplines').filter(x=>x.id!==t.id).sort((a,b)=>(b.name===t.name)-(a.name===t.name)||vl(a).localeCompare(vl(b),'uk'))},
+  xmap(){const s=(this.D.disciplines||[]).find(x=>x.id===this.xsrc);return s&&this.curDisc?this.mapComps(s,this.curDisc):null},
   curDisc(){return(this.D.disciplines||[]).find(d=>d.id===this.dsel)||null},
   forms(){const P=(this.curDisc&&this.curDisc.params)||{};return P.part_enabled?['day','part']:['day']},
   nComp(){return(this.D.discipline_competencies||[]).filter(x=>x.discipline_id===this.dsel).length},
@@ -396,16 +420,27 @@ Vue.createApp({
    let num=0;
    let rn=0;
    const modules=dd.modules.map((m,i)=>{const n=m.ind?'':++rn;return{n,name:m.name||'',
-    heading:m.ind?(m.name||'Індивідуальні завдання'):'Змістовий модуль '+n+'. '+(m.name||''),
-    sumLabel:m.ind?'Разом за індивідуальними завданнями':'Разом за змістовим модулем '+n,
-    topics:m.topics.map((t,j)=>{num++;const title=(t.title||'').trim().replace(/\.+$/,''),desc=(t.description||'').trim();
-     return{num,title,description:desc,line:'Тема '+num+'. '+title+'.'+(desc?' '+desc:''),day:R(c.mods[i].topics[j].day),part:R(c.mods[i].topics[j].part)}}),
+    heading:m.ind?(m.name||'Індивідуальні завдання'):'Змістовний модуль '+n+'. '+(m.name||''),
+    sheading:m.ind?(m.name||'Індивідуальні завдання'):'Змістовний модуль '+n+'. '+(m.name||''),
+    sumLabel:m.ind?'§§DEL§§':'Разом за змістовним модулем '+n,
+    topics:m.topics.map((t,j)=>{if(!m.ind)num++;const ttl=(t.title||'').trim(),title=ttl.replace(/\.+$/,''),desc=(t.description||'').trim();
+     return{num:m.ind?'':num,title,description:desc,
+      label:m.ind?ttl:'Тема '+num+'. '+title,
+      line:m.ind?[ttl,desc].filter(Boolean).join('. '):'Тема '+num+'. '+title+'.'+(desc?' '+desc:''),
+      sline:m.ind?ttl:'Тема '+num+'. '+ttl,day:R(c.mods[i].topics[j].day),part:R(c.mods[i].topics[j].part)}}),
     sum:{day:R(c.mods[i].sum.day),part:R(c.mods[i].sum.part)}}});
    const sel=new Set(D.discipline_competencies.filter(x=>x.discipline_id===d.id).map(x=>x.competency_id));
    const comps=D.competencies.filter(x=>sel.has(x.id)).sort((a,b)=>a.sort-b.sort);
-   const byKind=k=>comps.filter(x=>x.kind===k).map(x=>({label:k==='IK'?'':x.code.replace('.','')+'. ',text:x.text}));
+   const byKind=k=>comps.filter(x=>x.kind===k).map(x=>({label:k==='IK'?'':x.code.replace('.','').replace(/^РН/,RN_LABEL)+'. ',text:x.text}));
    const lst=k=>dd[k].map((r,i)=>({n:i+1,title:r.title||'',hours:z(Number(r.hours)||0)}));
    const lines=t=>(t||'').split('\n').map(x=>x.trim()).filter(Boolean).map((x,i)=>({n:i+1,text:x.replace(/^\d+[.)]\s*/,'')}));
+   const q=P.day||{},parts=[];
+   if(q.lectures)parts.push('Лекції – '+q.lectures+' год');if(q.practicals)parts.push('Практичні заняття – '+q.practicals+' год');
+   if(q.labs)parts.push('Лабораторні роботи – '+q.labs+' год');if(q.consultations)parts.push('Консультації – '+q.consultations+' год');
+   if(d.control_type)parts.push('Семестровий контроль - '+d.control_type.charAt(0).toUpperCase()+d.control_type.slice(1)+'.');
+   const AuthorsList=D.discipline_teachers.filter(x=>x.discipline_id===d.id).map(x=>D.profiles.find(p=>p.id===x.user_id)).filter(p=>p&&(p.full_name||p.full_name_long))
+    .map(p=>{const ad=D.departments.find(x=>x.id===p.department_id)||dep;
+     return{line:[[p.position,ad.abbr?'кафедри '+ad.abbr:''].filter(Boolean).join(' '),p.full_name_long||p.full_name,p.email].filter(Boolean).join(', ')}});
    const o={Faculty:fac.name||'',AbbFaculty:fac.abbr||'',Dean:fac.dean||'',MethodHead:fac.method_head||'',
     Department:dep.name||'',AbbDep:dep.abbr||'',Head:dep.head||'',
     DisciplineName:d.name,EducationLevel:prog.education_level||'',SpecialtyCode:[prog.specialty_code,prog.specialty_name].filter(Boolean).join(' '),
@@ -413,6 +448,11 @@ Vue.createApp({
     ECTS:z(d.ects),TypeOfDiscipline:d.type||'',LanguageDiscipline:d.language||'',ControlType:d.control_type||'',ModulesCount:z(dd.modules.filter(m=>!m.ind).length),
     DepSignatureYear:dd.year,FacSignatureLDate:dlong(fa.sign_date),FacSignatureDate:dshort(fa.protocol_date),FacApprovText:fa.protocol_no||'',
     DepApprovDate:dshort(da.protocol_date),DepApprovText:da.protocol_no||'',DepSignatureDate:dshort(da.sign_date),
+    EducationLevelShort:LEVEL_NAME[prog.education_level]||prog.education_level||'',
+    SpecialtyLine:[prog.specialty_code,prog.specialty_name].filter(Boolean).join(' - '),
+    DisciplineCodeName:[d.code?d.code.trim().replace(/\.?$/,'.'):'',d.name].filter(Boolean).join(' '),
+    StructureLine:parts.join(', '),TotalLine:q.total?'Всього – '+q.total+' год.':'',
+    ScheduleLine:[q.year?'Курс – '+q.year:'',q.semester?'семестр навчання – '+q.semester+'-й':''].filter(Boolean).join(', '),AuthorsList,
     IntegralCompetency:byKind('IK'),GeneralCompetencies:byKind('ZK'),SpecialCompetencies:byKind('FK'),LearningCompetencies:byKind('RN'),
     modules,semester:{day:R(c.sem.day),part:R(c.sem.part)},
     practicals:lst('practicals'),PracticalsTotal:z(c.lists.practicals),labs:lst('labs'),LabsTotal:z(c.lists.labs),selfstudy:lst('selfstudy'),SelfStudyTotal:z(c.lists.selfstudy),
@@ -496,6 +536,39 @@ Vue.createApp({
    const{error}=await sb.from('documents').update({data:JSON.parse(snap)}).eq('discipline_id',id);
    if(error){this.dstate='Помилка збереження';return this.err(error)}
    this._saved=snap;this.dstate='Збережено ✓';const row=this.D.documents.find(x=>x.discipline_id===id);if(row)row.data=JSON.parse(snap)},
+  // Зіставлення компетенцій між версіями: спершу точний збіг, потім за формулюванням, потім за кодом
+  mapComps(s,t){const D=this.D,norm=x=>(x||'').toLowerCase().replace(/[\s.]+/g,' ').trim();
+   const tc=D.competencies.filter(c=>c.version_id===t.version_id),sel=new Set(D.discipline_competencies.filter(x=>x.discipline_id===s.id).map(x=>x.competency_id));
+   return D.competencies.filter(c=>sel.has(c.id)).sort((a,b)=>KORD.indexOf(a.kind)-KORD.indexOf(b.kind)||a.sort-b.sort).map(src=>{
+    let dst=tc.find(c=>c.kind===src.kind&&c.code===src.code&&norm(c.text)===norm(src.text)),st='exact';
+    if(!dst){dst=tc.find(c=>c.kind===src.kind&&norm(c.text)===norm(src.text));st='moved'}
+    if(!dst){dst=tc.find(c=>c.kind===src.kind&&c.code===src.code);st='reworded'}
+    return{src,dst:dst||null,st:dst?st:'missing'}})},
+  async transfer(srcId,opt,silent){const t=this.curDisc,s=this.D.disciplines.find(x=>x.id===srcId);if(!t||!s)return;
+   if(!silent&&!confirm('Перенести дані з «'+s.name+'» у «'+t.name+'»? Вибрані частини поточного документа буде замінено.'))return;
+   const done=[];
+   if(opt.doc){const sd=this.docOf(s);
+    if(!sd||!sd.data||!Object.keys(sd.data).length)this.notify('У джерела ще немає заповненого документа','err');
+    else{const src=JSON.parse(JSON.stringify(sd.data));delete src.year;for(const k in src)this.dd[k]=src[k];
+     this.dd.modules.forEach(m=>m.topics.forEach(x=>{x.day=x.day||{};x.part=x.part||{}}));done.push('зміст документа')}}
+   if(opt.comps){const map=this.mapComps(s,t),ok=map.filter(m=>m.dst);
+    let r=await sb.from('discipline_competencies').delete().eq('discipline_id',t.id);
+    if(!r.error&&ok.length)r=await sb.from('discipline_competencies').insert(ok.map(m=>({discipline_id:t.id,competency_id:m.dst.id})));
+    if(r.error)return this.err(r.error);
+    this.D.discipline_competencies=await all('discipline_competencies');done.push('компетенції: '+ok.length+' з '+map.length)}
+   if(opt.params){const params=JSON.parse(JSON.stringify(s.params||{}));
+    const{error}=await sb.from('disciplines').update({params}).eq('id',t.id);if(error)return this.err(error);t.params=params;done.push('години з опису')}
+   this.notify('Перенесено: '+(done.join('; ')||'нічого'))},
+  async cloneTo(){const s=this.curDisc,vid=this.xclone;if(!s||!vid)return this.notify('Оберіть версію ОП','err');
+   if(this.D.disciplines.some(x=>x.version_id===vid&&x.name===s.name))return this.notify('У цій версії вже є дисципліна з такою назвою — відкрийте її й скористайтесь «Перенести з…»','err');
+   const p={version_id:vid,department_id:s.department_id,code:s.code,name:s.name,type:s.type,ects:s.ects,language:s.language,control_type:s.control_type,params:JSON.parse(JSON.stringify(s.params||{}))};
+   if(!this.isAdmin)p.created_by=this.session.user.id;
+   const{data,error}=await sb.from('disciplines').insert(p).select('id').single();if(error)return this.err(error);
+   if(this.isAdmin){const rows=this.D.discipline_teachers.filter(x=>x.discipline_id===s.id).map(x=>({discipline_id:data.id,user_id:x.user_id}));
+    if(rows.length){const r=await sb.from('discipline_teachers').insert(rows);if(r.error)return this.err(r.error)}}
+   this.D.disciplines=await all('disciplines');this.D.discipline_teachers=await all('discipline_teachers');
+   const from=s.id;this.xclone='';this.dsel=data.id;await this.$nextTick();await this._lp;
+   await this.transfer(from,{doc:true,comps:true,params:false},true)},
   mv(a,i,d){const j=i+d;if(j<0||j>=a.length||(a[i]&&a[i].ind)||(a[j]&&a[j].ind))return;[a[i],a[j]]=[a[j],a[i]]},
   rm(a,i,ask){if(!ask||confirm('Видалити разом із усім вмістом?'))a.splice(i,1)},
   addModule(){const mod={name:'',topics:[{title:'',description:'',day:{},part:{}}]},i=this.dd.modules.findIndex(m=>m.ind);
@@ -513,7 +586,7 @@ Vue.createApp({
     xml=xml.replace(/<w:tr[ >](?:(?!<\/w:tr>)[\s\S])*<\/w:tr>/g,row=>{
      const cells=(row.match(/<w:tc>/g)||[]).length;
      const text=(row.match(/<w:t(?:\s[^>]*)?>[^<]*/g)||[]).join('').replace(/<w:t[^>]*>/g,'').trim();
-     return(cells===1&&/gridSpan/.test(row)&&!text)?'':row});
+     return(row.includes('§§DEL§§')||(cells===1&&/gridSpan/.test(row)&&!text))?'':row});
     out.file('word/document.xml',xml);
     const blob=out.generate({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);
