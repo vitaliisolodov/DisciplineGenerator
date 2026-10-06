@@ -29,6 +29,19 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
 .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99;padding:10px 18px;border-radius:6px;color:#fff;box-shadow:0 4px 14px #0004;cursor:pointer;max-width:90vw}
 .toast.ok{background:#2e7d32}.toast.err{background:#c62828}.toast.warn{background:#b26a00}
 .sigprev{max-height:80px;border:1px solid #ccd;margin-top:4px;background:repeating-conic-gradient(#ddd 0 25%,#fff 0 50%) 0 0/16px 16px}
+.mwrap{overflow:auto;max-height:78vh;background:#fff;border:1px solid #dde;margin-top:8px}
+table.mx{width:auto;border-collapse:separate;border-spacing:0;font-size:13px}
+table.mx td,table.mx th{border:0;border-right:1px solid #dde;border-bottom:1px solid #dde;padding:0;text-align:center}
+table.mx thead th{position:sticky;top:0;background:#eef1f6;z-index:2;height:92px;min-width:26px;vertical-align:bottom}
+table.mx th.mc{position:sticky;left:0;z-index:3;background:#eef1f6;text-align:left;padding:3px 8px;min-width:230px;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+table.mx thead th.mc{z-index:4}
+table.mx td{width:26px;height:24px;cursor:pointer;user-select:none}
+table.mx td:hover{background:#dfe9f7}
+table.mx td.on{background:#e3f1e5;color:#1b5e20;font-weight:700}
+table.mx tr.kh th{position:static;height:auto;background:#d9e1ee;text-align:left;padding:3px 8px;left:0}
+.vt{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;margin:4px auto;font-weight:600}
+.vt.nodisc{color:#8a6d00;font-style:italic}
+.mx .xdel{border:0;background:none;color:#a33;cursor:pointer;padding:0 0 3px;font-size:11px}
 </style>
 </head>
 <body>
@@ -150,6 +163,42 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
     </template>
     <details class="card"><summary>Імпорт з JSON (необов’язково)</summary>
       <p>Існуючі коди оновлюються: <input type="file" accept=".json" @change="importJson"></p></details>
+  </template>
+</section>
+
+<!-- Матриця відповідності -->
+<section v-else-if="tab==='matrix'">
+  <h3>Матриця відповідності: компетентності × дисципліни</h3>
+  <small>Заповнюється для версії ОП за кодом дисципліни (ОК 1.1 тощо) — дисципліну в системі створювати не обов’язково. Коли дисципліна з таким кодом з’являється, її компетенції підтягуються з матриці автоматично; викладач потім може їх підправити у вкладці «Компетенції».</small>
+  <select v-model="mv"><option value="">— оберіть версію ОП —</option>
+    <option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option></select>
+  <template v-if="mv">
+    <div class="card form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input v-model="mcode" placeholder="Код дисципліни, напр. ОК 1.1" style="max-width:260px" @keyup.enter="addCol">
+      <button class="p" @click="addCol">+ Додати колонку</button>
+      <small style="flex-basis:100%">Колонки з курсивом — дисципліни ще не створені. Клік по клітинці ставить/знімає «+» і зберігається одразу.</small>
+    </div>
+    <p v-if="!compRows.length">Для цієї версії ще немає компетенцій — спершу додайте їх у вкладці «Компетенції».</p>
+    <div class="mwrap" v-else>
+      <table class="mx">
+        <thead><tr><th class="mc">Компетентність</th>
+          <th v-for="col in matrixCols" :key="col.code" :title="colTitle(col)">
+            <div class="vt" :class="{nodisc:!col.disc}">{{col.code}}</div>
+            <button class="xdel" @click="delCol(col)" title="Видалити колонку / очистити відмітки">✕</button></th></tr></thead>
+        <tbody>
+        <template v-for="k in KORD" :key="k"><template v-if="compRowsOf(k).length">
+          <tr class="kh"><th class="mc" :colspan="matrixCols.length+1">{{KL[k]}}</th></tr>
+          <tr v-for="c in compRowsOf(k)" :key="c.id">
+            <th class="mc" :title="c.text"><b>{{c.code}}</b> {{c.text}}</th>
+            <td v-for="col in matrixCols" :key="col.code" :class="{on:mset.has(mv+'|'+NCf(col.code)+'|'+c.id)}" @click="mtoggle(col,c)">{{mset.has(mv+'|'+NCf(col.code)+'|'+c.id)?'+':''}}</td>
+          </tr></template></template>
+        </tbody>
+      </table>
+    </div>
+    <details class="card"><summary>Масовий імпорт (вставка з таблиці)</summary>
+      <small>По одному рядку на дисципліну: <code>ОК 1.1: ЗК.1, ЗК.2, ФК.3</code> (роздільник — двокрапка або Tab). Для кожної вказаної колонки відмітки замінюються.</small>
+      <textarea v-model="mimp" style="min-height:120px" placeholder="ОК 1.1: ЗК.1, ЗК.2, ФК.1"></textarea>
+      <button class="p" @click="importMx">Імпортувати</button></details>
   </template>
 </section>
 
@@ -296,11 +345,18 @@ h3{margin:18px 0 6px}.chk{display:block;padding:2px 0}
       <input type="checkbox" :checked="has('discipline_teachers','user_id',p.id)"
         @change="toggle('discipline_teachers','user_id',p.id,$event.target.checked)"> {{lab('profiles',p)}} <span style="color:#889;font-size:12px">{{p.email}}</span></label></template>
     <p v-else>Автори: {{authors(ad)}}</p>
+    <div v-if="ass&&ass.n" class="card" style="border-left:4px solid #1f3a5f">
+      <b>Матриця відповідності</b> для коду «{{ass.d.code}}» передбачає компетенцій: {{ass.n}}.
+      <span v-if="ass.plus||ass.minus"> Відмінності від поточного вибору: не вибрано {{ass.plus}}, вибрано зайвих {{ass.minus}}.</span>
+      <span v-else> Поточний вибір збігається з матрицею.</span>
+      <small>★ біля компетенції означає, що вона є в матриці.</small>
+      <button class="p" v-if="ass.plus||ass.minus" @click="applyMx(ass.d,true)" style="margin-top:6px">Застосувати з матриці (замінить вибір)</button>
+    </div>
     <template v-for="k in KORD" :key="k">
       <h3>{{KL[k]}}</h3>
       <label class="chk" v-for="c in discComps.filter(x=>x.kind===k)" :key="c.id">
         <input type="checkbox" :checked="has('discipline_competencies','competency_id',c.id)"
-          @change="toggle('discipline_competencies','competency_id',c.id,$event.target.checked)"> <b>{{c.code}}</b> {{c.text}}</label>
+          @change="toggle('discipline_competencies','competency_id',c.id,$event.target.checked)"> <span v-if="assIds.has(c.id)" title="Є в матриці" style="color:#b26a00">★</span> <b>{{c.code}}</b> {{c.text}}</label>
     </template>
   </template>
 </section>
@@ -360,9 +416,11 @@ const T = {
  disciplines:{label:'Дисципліни',f:[{k:'version_id',l:'Версія ОП',ref:'program_versions'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'code',l:'Код'},{k:'name',l:'Назва'},{k:'type',l:'Тип'},{k:'ects',l:'Кредити ЄКТС',num:true},{k:'language',l:'Мова'},{k:'control_type',l:'Форма контролю'}]},
  profiles:{label:'Користувачі',noAdd:true,noDel:true,sigs:[['profile','Підпис викладача']],f:[{k:'email',l:'Email (для входу)',ro:true},{k:'full_name',l:'ПІБ'},{k:'full_name_long',l:'Повне ПІБ (для силабусу)'},{k:'position',l:'Посада'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'role',l:'Роль',opts:['teacher','admin']}]}
 };
-const TABLES=[...Object.keys(T),'competencies','discipline_competencies','discipline_teachers','documents','faculty_approvals','department_approvals'];
+const TABLES=[...Object.keys(T),'competencies','discipline_competencies','discipline_teachers','documents','faculty_approvals','department_approvals','matrix_columns','matrix_cells'];
 const KINDS={IntegralCompetency:'IK',GeneralCompetencies:'ZK',SpecialCompetencies:'FK',LearningCompetencies:'RN'};
 const KORD=['IK','ZK','FK','RN'];
+const NC=x=>(x||'').toLowerCase().replace(/\s+/g,'');          // код дисципліни: без пробілів і регістру
+const NK=x=>(x||'').toLowerCase().replace(/[\s.]+/g,'');      // код компетенції: ЗК.1 = ЗК 1 = зк1
 const KL={IK:'Інтегральна',ZK:'Загальні',FK:'Спеціальні (фахові)',RN:'Результати навчання'};
 const PFX={IK:'ІК',ZK:'ЗК',FK:'ФК',RN:'РН'};
 // Поля затверджень: [колонка, підпис, тип]
@@ -441,8 +499,8 @@ const clean=t=>(t||'').replace(/^\s*(ІК|ЗК|ФК|ПРН|РН|Р)\.?\s?\d+\.?\
 async function all(t){let o=[],i=0;for(;;){const{data,error}=await sb.from(t).select('*').range(i,i+999);if(error)throw error;o=o.concat(data);if(data.length<1000)return o;i+=1000}}
 
 Vue.createApp({
- data(){return{T,KL,KORD,HOURS,HF,LISTS,TXT1,TXT2,EX,dsel:'',dd:null,dstate:'',tpl:{},TPLS:[['rpnd','РПНД'],['syllabus','Силабус']],sigs:{},sigUrl:{},xsrc:'',xclone:'',xopt:{doc:true,comps:true,params:false},XST:{exact:'✔ без змін',moved:'↔ змінився код',reworded:'✎ змінилось формулювання',missing:'✖ немає в цій версії — не буде перенесена'},YEARS,APF,APD,ay:new Date().getFullYear(),ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,sv:'',nc:{kind:'ZK',text:''},
-  tabs:[['faculties','Факультети'],['departments','Кафедри'],['programs','Програми'],['program_versions','Версії ОП'],['comp','Компетенції'],['disciplines','Дисципліни'],['assign','Призначення'],['doc','Документ'],['approvals','Затвердження'],['templates','Шаблони'],['sig','Мій підпис'],['stats','Статистика'],['profiles','Користувачі']]}},
+ data(){return{T,KL,KORD,HOURS,HF,LISTS,TXT1,TXT2,EX,dsel:'',dd:null,dstate:'',tpl:{},TPLS:[['rpnd','РПНД'],['syllabus','Силабус']],sigs:{},sigUrl:{},xsrc:'',xclone:'',xopt:{doc:true,comps:true,params:false},XST:{exact:'✔ без змін',moved:'↔ змінився код',reworded:'✎ змінилось формулювання',missing:'✖ немає в цій версії — не буде перенесена'},YEARS,APF,APD,ay:new Date().getFullYear(),ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,sv:'',mv:'',mcode:'',mimp:'',nc:{kind:'ZK',text:''},
+  tabs:[['faculties','Факультети'],['departments','Кафедри'],['programs','Програми'],['program_versions','Версії ОП'],['comp','Компетенції'],['matrix','Матриця'],['disciplines','Дисципліни'],['assign','Призначення'],['doc','Документ'],['approvals','Затвердження'],['templates','Шаблони'],['sig','Мій підпис'],['stats','Статистика'],['profiles','Користувачі']]}},
  async mounted(){const{data}=await sb.auth.getSession();await this.setSession(data.session);this.ready=true},
  watch:{
   dsel(){this._lp=this.loadDoc();this.xsrc=''},
@@ -555,6 +613,18 @@ Vue.createApp({
     const doc=this.docOf(d),ver=this.lab('program_versions',this.D.program_versions.find(v=>v.id===d.version_id));
     return{d,ver,teachers:this.authors(d.id,true),rpnd:doc&&doc.rpnd_done_at,syl:doc&&doc.syllabus_done_at}})
    .sort((a,b)=>a.ver.localeCompare(b.ver)||a.d.name.localeCompare(b.d.name))},
+  mset(){return new Set((this.D.matrix_cells||[]).map(x=>x.version_id+'|'+NC(x.code)+'|'+x.competency_id))},
+  matrixCols(){const v=this.mv;if(!v)return[];const cols=(this.D.matrix_columns||[]).filter(c=>c.version_id===v).map(c=>({code:c.code,sort:c.sort}));
+   const have=new Set(cols.map(c=>NC(c.code)));
+   (this.D.disciplines||[]).filter(d=>d.version_id===v&&d.code&&!have.has(NC(d.code))).forEach(d=>{have.add(NC(d.code));cols.push({code:d.code,sort:1e9,virtual:true})});
+   const dn=new Set((this.D.disciplines||[]).filter(d=>d.version_id===v).map(d=>NC(d.code)));
+   cols.forEach(c=>c.disc=dn.has(NC(c.code)));
+   return cols.sort((a,b)=>a.sort-b.sort||a.code.localeCompare(b.code,'uk',{numeric:true}))},
+  compRows(){return(this.D.competencies||[]).filter(c=>c.version_id===this.mv).sort((a,b)=>a.sort-b.sort)},
+  ass(){const d=(this.D.disciplines||[]).find(x=>x.id===this.ad);if(!d||!d.code)return null;
+   const ids=this.matrixIds(d),cur=(this.D.discipline_competencies||[]).filter(x=>x.discipline_id===d.id).map(x=>x.competency_id);
+   return{d,n:ids.length,plus:ids.filter(i=>!cur.includes(i)).length,minus:cur.filter(i=>!ids.includes(i)).length}},
+  assIds(){const d=(this.D.disciplines||[]).find(x=>x.id===this.ad);return new Set(d&&d.code?this.matrixIds(d):[])},
   compList(){return(this.D.competencies||[]).filter(c=>c.version_id===this.cv).sort((a,b)=>a.sort-b.sort)},
   discComps(){const d=(this.D.disciplines||[]).find(x=>x.id===this.ad);return d?(this.D.competencies||[]).filter(c=>c.version_id===d.version_id).sort((a,b)=>a.sort-b.sort):[]}
  },
@@ -589,8 +659,11 @@ Vue.createApp({
    const{data,error}=await(this.form.id?sb.from(t).update(p).eq('id',this.form.id):sb.from(t).insert(p)).select('id').single();
    if(error)return this.err(error);
    if(t==='disciplines'&&this.isAdmin)await this.saveTeachers(data.id,this.form.teachers||[]);
+   const isNew=!this.form.id;
    this.notify('Збережено');this.form=null;this.D[t]=await all(t);
-   if(t==='disciplines')this.D.discipline_teachers=await all('discipline_teachers')},
+   if(t==='disciplines'){this.D.discipline_teachers=await all('discipline_teachers');
+    const d=this.D.disciplines.find(x=>x.id===data.id);   // нова дисципліна: компетенції з матриці за кодом
+    if(isNew&&d&&d.code&&this.matrixIds(d).length)await this.applyMx(d,false)}},
   rowsOf(t){if(t!=='disciplines'||this.isAdmin)return this.D[t]||[];const me=this.session.user.id;
    return(this.D.disciplines||[]).filter(d=>(this.D.discipline_teachers||[]).some(x=>x.discipline_id===d.id&&x.user_id===me))},
   authors(id,orEmpty){return(this.D.discipline_teachers||[]).filter(x=>x.discipline_id===id)
@@ -777,6 +850,44 @@ Vue.createApp({
    const rows=[];for(const[key,kind]of Object.entries(KINDS))(j[key]||[]).forEach((c,i)=>rows.push({version_id:this.cv,kind,code:c.code.trim(),text:clean(c.text),sort:i}));
    const{error}=await sb.from('competencies').upsert(rows,{onConflict:'version_id,code'});
    ev.target.value='';if(error)return this.err(error);this.notify('Імпортовано: '+rows.length);await this.reloadComp()},
+
+  // ---- матриця відповідності ----
+  NCf:NC,
+  compRowsOf(k){return this.compRows.filter(c=>c.kind===k)},
+  colTitle(col){const d=(this.D.disciplines||[]).find(x=>x.version_id===this.mv&&NC(x.code)===NC(col.code));return d?col.code+' — '+d.name:col.code+' — дисципліну ще не створено'},
+  matrixIds(d){return(this.D.matrix_cells||[]).filter(x=>x.version_id===d.version_id&&NC(x.code)===NC(d.code)).map(x=>x.competency_id)},
+  nextColSort(){const a=(this.D.matrix_columns||[]).filter(c=>c.version_id===this.mv).map(c=>c.sort||0);return a.length?Math.max(...a)+1:0},
+  async ensureCol(code){if(this.matrixCols.some(c=>NC(c.code)===NC(code)&&!c.virtual))return true;
+   const{error}=await sb.from('matrix_columns').insert({version_id:this.mv,code,sort:this.nextColSort()});if(error){this.err(error);return false}
+   this.D.matrix_columns=await all('matrix_columns');return true},
+  async addCol(){const code=(this.mcode||'').trim().replace(/\s+/g,' ');if(!code)return;
+   if(this.matrixCols.some(c=>NC(c.code)===NC(code)&&!c.virtual))return this.notify('Така колонка вже є','warn');
+   if(await this.ensureCol(code)){this.mcode='';this.notify('Колонку додано')}},
+  async mtoggle(col,c){const v=this.mv,on=!this.mset.has(v+'|'+NC(col.code)+'|'+c.id);
+   if(!await this.ensureCol(col.code))return;
+   const row={version_id:v,code:col.code,competency_id:c.id};
+   if(on)this.D.matrix_cells.push(row);else this.D.matrix_cells=this.D.matrix_cells.filter(x=>!(x.version_id===v&&NC(x.code)===NC(col.code)&&x.competency_id===c.id));
+   const{error}=await(on?sb.from('matrix_cells').upsert(row):sb.from('matrix_cells').delete().match(row));
+   if(error){this.err(error);this.D.matrix_cells=await all('matrix_cells')}},
+  async delCol(col){if(!confirm('Прибрати колонку «'+col.code+'» разом з відмітками?'+(col.virtual||col.disc?'\n(Сама дисципліна не видаляється; колонка знову з’явиться, поки існує дисципліна з цим кодом.)':'')))return;
+   let r=await sb.from('matrix_cells').delete().match({version_id:this.mv,code:col.code});if(r.error)return this.err(r.error);
+   r=await sb.from('matrix_columns').delete().match({version_id:this.mv,code:col.code});if(r.error)return this.err(r.error);
+   this.D.matrix_cells=await all('matrix_cells');this.D.matrix_columns=await all('matrix_columns');this.notify('Видалено')},
+  async importMx(){const v=this.mv,byCode=new Map(this.compRows.map(c=>[NK(c.code),c.id])),bad=new Set();let nCols=0;
+   for(const line of (this.mimp||'').split('\n')){const m=line.match(/^\s*([^:\t]+?)\s*[:\t]\s*(.*)$/);if(!m)continue;
+    const code=m[1].trim().replace(/\s+/g,' '),ids=[];
+    m[2].split(/[,;]+/).map(x=>x.trim()).filter(Boolean).forEach(x=>{const id=byCode.get(NK(x));id?ids.push(id):bad.add(x)});
+    const ex=this.matrixCols.find(c=>NC(c.code)===NC(code)),cc=ex?ex.code:code;
+    if(!await this.ensureCol(cc))return;
+    let r=await sb.from('matrix_cells').delete().match({version_id:v,code:cc});if(r.error)return this.err(r.error);
+    if(ids.length){r=await sb.from('matrix_cells').insert([...new Set(ids)].map(id=>({version_id:v,code:cc,competency_id:id})));if(r.error)return this.err(r.error)}
+    nCols++}
+   this.D.matrix_cells=await all('matrix_cells');
+   this.notify('Імпортовано колонок: '+nCols+(bad.size?'. Не знайдено компетенцій: '+[...bad].join(', '):''),bad.size?'warn':'ok')},
+  async applyMx(d,ask){const ids=this.matrixIds(d);if(ask&&!confirm('Замінити поточний вибір компетенцій дисципліни «'+d.name+'» на значення з матриці?'))return;
+   let r=await sb.from('discipline_competencies').delete().eq('discipline_id',d.id);if(r.error)return this.err(r.error);
+   if(ids.length){r=await sb.from('discipline_competencies').insert(ids.map(id=>({discipline_id:d.id,competency_id:id})));if(r.error)return this.err(r.error)}
+   this.D.discipline_competencies=await all('discipline_competencies');this.notify('Компетенції підтягнуто з матриці: '+ids.length)},
 
   // ---- призначення ----
   has(t,key,id){return(this.D[t]||[]).some(x=>x.discipline_id===this.ad&&x[key]===id)},
