@@ -579,7 +579,7 @@ Vue.createApp({
   lab(t,r){if(!r)return'';
    if(t==='program_versions')return this.lab('programs',this.D.programs.find(p=>p.id===r.program_id))+' · '+r.entry_year;
    if(t==='disciplines')return r.name;if(t==='profiles')return r.full_name||('⚠ без ПІБ: '+(r.email||r.id.slice(0,8)));
-   if(t==='programs')return[LVL[r.education_level]||r.education_level,r.abbr?'ОП «'+r.abbr+'»':r.name,r.specialty_code].filter(Boolean).join(' · ');
+   if(t==='programs')return[LVL[r.education_level]||r.education_level,r.specialty_code,r.abbr?'ОП «'+r.abbr+'»':r.name].filter(Boolean).join(' · ');
    return r.abbr||r.name},
   opts(f){return f.opts?f.opts.map(x=>({id:x,l:x})):(this.D[f.ref]||[]).map(r=>({id:r.id,l:this.lab(f.ref,r)})).sort((a,b)=>a.l.localeCompare(b.l,'uk'))},
   show(r,f){return f.ref?this.lab(f.ref,this.D[f.ref].find(x=>x.id===r[f.k])):r[f.k]},
