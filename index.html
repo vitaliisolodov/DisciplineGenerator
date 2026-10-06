@@ -1460,6 +1460,18 @@ function matchPlanItem(name, stream, D) {
   return { item: cand[0].it, kind };
 }
 
+// Обов’язкова / Вибіркова за позицією плану (код ОК/ВК, інакше збережений тип)
+function disciplineType(item) {
+  if (!item) return null;
+  const c = String(item.code || '').trim().toUpperCase();
+  if (/^[OО][KК]/.test(c)) return 'Обов’язкова';
+  if (/^[BВ][KК]/.test(c)) return 'Вибіркова';
+  const t = String(item.discipline_type || item.type || '').toLowerCase();
+  if (/обов/.test(t)) return 'Обов’язкова';
+  if (/вибір/.test(t)) return 'Вибіркова';
+  return null;
+}
+
 // ---------- Парсер навантаження викладача (xls/xlsx) ----------
 async function parseLoad(file, D) {
   const sheets = await readSheets(file);
@@ -2379,6 +2391,8 @@ async impLoadApply() {
           code: match?.code || null,
           name: match?.name_uk || r.name,
           ects: match?.ects || null,
+          ...(disciplineType(match) ? { type: disciplineType(match) } : {}),
+          language: 'Українська',
           control_type: match?.control_type || r.control || null,
           department_id: this.profile.department_id || null,
           study_year: this.loadYear,
