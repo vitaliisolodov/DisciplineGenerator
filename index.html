@@ -142,6 +142,46 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
   </template>
 </section>
 
+<!-- Імпорт навантаження -->
+<section v-else-if="tab==='import'">
+  <h3>Імпорт навантаження викладача</h3>
+  <small>Завантажте файл навантаження (.xls або .xlsx). З нього підтягнуться дисципліни, години лекцій, практичних, лабораторних і консультацій, форма контролю, а курс і семестр — за шифром групи (ЕСТМ-23-1 → вступ 2023). Усе можна виправити вручну; у систему нічого не потрапить, доки не натиснете «Імпортувати». Години самостійної роботи та «Усього» у файлі немає — їх додайте у вкладці «Дисципліни».</small>
+  <p><input type="file" accept=".xls,.xlsx" @change="impFile"></p>
+  <template v-if="imp">
+    <div class="card form">
+      <b>{{imp.title}}</b> · {{imp.year}} н.р.
+      <label>Викладач (буде призначений на всі імпортовані дисципліни)
+        <select v-model="imp.teacher"><option :value="null">— не призначати —</option><option v-for="p in profs" :key="p.id" :value="p.id">{{lab('profiles',p)}} · {{p.email}}</option></select>
+        <small>У файлі: «{{imp.teacherRaw}}». <span v-if="!imp.teacher" style="color:#c62828">Однозначного збігу серед користувачів немає — оберіть вручну.</span></small></label>
+      <label>Кафедра для нових дисциплін
+        <select v-model="imp.dep"><option :value="null">—</option><option v-for="d in D.departments" :key="d.id" :value="d.id">{{lab('departments',d)}}</option></select></label>
+      <label>Версія ОП для всіх рядків, де вона ще не обрана
+        <select @change="impBulk($event.target.value);$event.target.value=''"><option value="">— оберіть —</option><option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option></select></label>
+    </div>
+    <div style="overflow-x:auto"><table>
+      <tr><th></th><th>Дисципліна</th><th>Групи / студ.</th><th>Версія ОП</th><th>Курс</th><th>Сем.</th><th>Лекц.</th><th>Практ.</th><th>Лаб.</th><th>Конс.</th><th>Контроль</th><th>Існуюча дисципліна</th><th>Інше у файлі</th></tr>
+      <tr v-for="(r,i) in imp.rows" :key="i" :style="{opacity:r.on?1:.55}">
+        <td><input type="checkbox" v-model="r.on"></td>
+        <td style="min-width:230px"><input v-model="r.name" style="width:100%"><small>{{r.sem}} семестр<span v-if="r.name.length>=35&&!r.target" style="color:#b26a00"> · ⚠ у файлі назва могла обрізатись — перевірте</span></small></td>
+        <td style="min-width:140px">{{r.groups}}<small>{{r.students}} студ.</small></td>
+        <td><select :value="r.ver" @change="impSetVer(r,$event.target.value)" style="max-width:190px"><option value="">—</option><option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option></select></td>
+        <td><input type="number" v-model.number="r.year" style="width:46px"></td>
+        <td><input type="number" v-model.number="r.semester" style="width:46px"></td>
+        <td><input type="number" step="any" v-model.number="r.l" style="width:54px"></td>
+        <td><input type="number" step="any" v-model.number="r.p" style="width:54px"></td>
+        <td><input type="number" step="any" v-model.number="r.lab" style="width:54px"></td>
+        <td><input type="number" step="any" v-model.number="r.cons" style="width:54px"></td>
+        <td><select v-model="r.control"><option value="">—</option><option>залік</option><option>екзамен</option><option>диференційований залік</option></select><small v-if="r.ctrlRaw">у файлі: {{r.ctrlRaw}}</small></td>
+        <td><select :value="r.target||''" @change="impSetT(r,$event.target.value)" :disabled="!r.ver" style="max-width:200px"><option value="">+ створити нову</option><option v-for="d in impCands(r)" :key="d.id" :value="d.id">оновити: {{d.name}}</option></select></td>
+        <td style="font-size:12.5px;color:#667">{{r.other}}</td>
+      </tr>
+    </table></div>
+    <p><button class="p" @click="impRun">Імпортувати відмічені ({{imp.rows.filter(r=>r.on).length}})</button>
+      <button class="s" @click="imp=null">Скасувати</button></p>
+    <small>Рядки без годин лекцій/практичних/лабораторних/консультацій (практика, кваліфікаційна робота) за замовчуванням не відмічені. Для наявної дисципліни оновлюються лише години, курс і семестр (форма контролю — лише якщо була порожня).</small>
+  </template>
+</section>
+
 <!-- Компетенції -->
 <section v-else-if="tab==='comp'">
   <h3>Компетенції версії ОП</h3>
@@ -390,6 +430,7 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pizzip@3.3.0/dist/pizzip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docxtemplater@3.71.0/build/docxtemplater.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 const sb = supabase.createClient('https://ljhnvaydkurzxxuemzee.supabase.co','sb_publishable_GZSQEqlKeC6EmVeYtPaeyA_hrm9wVsO');
 
@@ -519,11 +560,47 @@ function applySignatures(out,imgs){
  out.file('word/document.xml',xml);return used}
 const clean=t=>(t||'').replace(/^\s*(ІК|ЗК|ФК|ПРН|РН|Р)\.?\s?\d+\.?\s*/i,'').trim();
 
+// ===== Імпорт навантаження викладача з .xls/.xlsx =====
+const impAb=x=>(x||'').toLowerCase().replace(/[^а-яіїєґa-z0-9]/g,'');
+const impCtrl=s=>{const u=String(s||'').toUpperCase().replace(/E/g,'Е');return /Е/.test(u)?'екзамен':/ДЗ/.test(u)?'диференційований залік':/З/.test(u)?'залік':''};
+function impMatch(r,D){if(!r.ver)return null;const k=impAb(r.name);if(k.length<4)return null;
+ const d=(D.disciplines||[]).find(d=>{const n=impAb(d.name);return d.version_id===r.ver&&n.length>3&&(n===k||n.startsWith(k)||k.startsWith(n))});return d?d.id:null}
+function impParse(A,D,me){
+ const T=r=>r.map(c=>String(c).trim()).filter(Boolean).join(' ');
+ const hi=A.findIndex(r=>String(r[0]).trim()==='Дисципліна');
+ if(hi<0)throw new Error('не знайдено заголовок «Дисципліна» — це файл навантаження?');
+ const H=(A[hi+1]||[]).map(c=>String(c).trim()),ix=re=>H.findIndex(c=>re.test(c));
+ const C={l:ix(/лекц/i),p:ix(/практичн/i),lab:ix(/лабор/i),cons:ix(/консульт/i),tot:ix(/усього/i)};
+ if([C.l,C.p,C.lab,C.cons].some(i=>i<0))throw new Error('не знайдено колонки годин (Лекційних, Практичних, Лабораторних, Консультації)');
+ const head=A.slice(0,hi).map(T).filter(Boolean);
+ const teacherRaw=head.find(x=>/\(.*\)/.test(x)&&!/\d{4}/.test(x))||head[head.findIndex(x=>/навантаження/i.test(x))+1]||'';
+ const ym=head.join(' ').match(/(\d{4})\s*\/\s*(\d{4})/),y0=ym?+ym[1]:null;
+ const nm=teacherRaw.replace(/\(.*\)/,'').trim(),pos=(teacherRaw.match(/\((.*)\)/)||[])[1]||'';
+ const sur=nm.split(/\s+/)[0].toLowerCase(),ini=((nm.match(/\s(\S)\./)||[])[1]||'').toUpperCase();
+ let m=(D.profiles||[]).filter(p=>sur&&[p.full_name,p.full_name_long].some(s=>(s||'').toLowerCase().includes(sur)));
+ if(m.length>1&&ini){const m2=m.filter(p=>(p.full_name_long||p.full_name||'').toUpperCase().split(/\s+/).some(w=>w[0]===ini));if(m2.length)m=m2}
+ const rows=[];let sem='';
+ for(const r of A.slice(hi+2)){
+  const name=String(r[0]).trim();if(!name||/^усього/i.test(name)||/^\d+$/.test(name))continue;
+  if(/^(осінн|веснян)/i.test(name)&&T(r)===name){sem=/осінн/i.test(name)?'Осінній':'Весняний';continue}
+  if(!sem||(r[C.l]===''&&r[C.p]===''&&r[C.lab]===''))continue;
+  const n=i=>Number(r[i])||0,gs=String(r[1]).split('+').map(s=>s.trim()).filter(Boolean),g=(gs[0]||'').match(/^(.+?)-(\d{2})-\d+/);
+  let ver='',year=null,semester=null;
+  if(g){const e=2000+ +g[2],c=y0?y0-e+1:0;if(c>=1&&c<=6){year=c;semester=(c-1)*2+(sem==='Осінній'?1:2)}
+   const pr=D.programs||[],pa=pr.find(p=>impAb(p.abbr)===impAb(g[1]))||pr.find(p=>impAb(p.abbr)===impAb(g[1].replace(/[а-яіїєґa-z]+$/,'')));
+   const v=pa&&(D.program_versions||[]).find(v=>v.program_id===pa.id&&+v.entry_year===e);if(v)ver=v.id}
+  const other=[];for(let i=C.cons+1;i<(C.tot>0?C.tot:H.length);i++)if(n(i))other.push(H[i]+': '+n(i));
+  const x={on:n(C.l)+n(C.p)+n(C.lab)+n(C.cons)>0,name,sem,groups:gs.join(' + '),students:r[2],ver,year,semester,l:n(C.l),p:n(C.p),lab:n(C.lab),cons:n(C.cons),
+   ctrlRaw:String(r[3]).trim(),control:impCtrl(r[3]),other:other.join('; '),target:null};
+  x.target=impMatch(x,D);rows.push(x)}
+ if(!rows.length)throw new Error('у файлі не знайдено рядків з дисциплінами');
+ return{title:nm+(pos?' ('+pos+')':''),teacherRaw,year:ym?ym[0]:'',teacher:m.length===1?m[0].id:null,dep:(m.length===1&&m[0].department_id)||me.department_id||null,rows}}
+
 async function all(t){let o=[],i=0;for(;;){const{data,error}=await sb.from(t).select('*').range(i,i+999);if(error)throw error;o=o.concat(data);if(data.length<1000)return o;i+=1000}}
 
 Vue.createApp({
- data(){return{T,KL,KORD,HOURS,HF,LISTS,TXT1,TXT2,EX,dsel:'',dd:null,dstate:'',tpl:{},TPLS:[['rpnd','РПНД'],['syllabus','Силабус']],sigs:{},sigUrl:{},xsrc:'',xclone:'',xopt:{doc:true,comps:true,params:false},XST:{exact:'✔ без змін',moved:'↔ змінився код',reworded:'✎ змінилось формулювання',missing:'✖ немає в цій версії — не буде перенесена'},YEARS,APF,APD,ay:new Date().getFullYear(),ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,sv:'',q:'',sk:'',sd:1,cf:{},stQ:'',stS:'ver',stD:1,stF:'',msort:'code',mpre:'',mq:'',mkind:'',mv:'',mcode:'',mimp:'',nc:{kind:'ZK',text:''},
-  tabs:[['faculties','Факультети'],['departments','Кафедри'],['programs','Програми'],['program_versions','Версії ОП'],['comp','Компетенції'],['matrix','Матриця'],['disciplines','Дисципліни'],['assign','Призначення'],['doc','Документ'],['approvals','Затвердження'],['templates','Шаблони'],['sig','Мій підпис'],['stats','Статистика'],['profiles','Користувачі']]}},
+ data(){return{T,KL,KORD,HOURS,HF,LISTS,TXT1,TXT2,EX,dsel:'',dd:null,imp:null,dstate:'',tpl:{},TPLS:[['rpnd','РПНД'],['syllabus','Силабус']],sigs:{},sigUrl:{},xsrc:'',xclone:'',xopt:{doc:true,comps:true,params:false},XST:{exact:'✔ без змін',moved:'↔ змінився код',reworded:'✎ змінилось формулювання',missing:'✖ немає в цій версії — не буде перенесена'},YEARS,APF,APD,ay:new Date().getFullYear(),ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,sv:'',q:'',sk:'',sd:1,cf:{},stQ:'',stS:'ver',stD:1,stF:'',msort:'code',mpre:'',mq:'',mkind:'',mv:'',mcode:'',mimp:'',nc:{kind:'ZK',text:''},
+  tabs:[['faculties','Факультети'],['departments','Кафедри'],['programs','Програми'],['program_versions','Версії ОП'],['comp','Компетенції'],['matrix','Матриця'],['disciplines','Дисципліни'],['import','Імпорт навантаження'],['assign','Призначення'],['doc','Документ'],['approvals','Затвердження'],['templates','Шаблони'],['sig','Мій підпис'],['stats','Статистика'],['profiles','Користувачі']]}},
  async mounted(){const{data}=await sb.auth.getSession();await this.setSession(data.session);this.ready=true},
  watch:{
   dsel(){this._lp=this.loadDoc();this.xsrc=''},
@@ -931,6 +1008,38 @@ Vue.createApp({
    let r=await sb.from('discipline_competencies').delete().eq('discipline_id',d.id);if(r.error)return this.err(r.error);
    if(ids.length){r=await sb.from('discipline_competencies').insert(ids.map(id=>({discipline_id:d.id,competency_id:id})));if(r.error)return this.err(r.error)}
    this.D.discipline_competencies=await all('discipline_competencies');this.notify('Компетенції підтягнуто з матриці: '+ids.length)},
+
+  // ---- імпорт навантаження ----
+  async impFile(ev){const f=ev.target.files[0];ev.target.value='';if(!f)return;
+   try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}),A=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+    this.imp=impParse(A,this.D,this.profile);this.notify('Знайдено рядків: '+this.imp.rows.length+'. Перевірте таблицю й натисніть «Імпортувати»')}
+   catch(e){this.imp=null;this.notify('Не вдалося прочитати файл: '+(e.message||e),'err')}},
+  impSetVer(r,v){const x=this.versions.find(z=>String(z.id)===v);r.ver=x?x.id:'';r.target=impMatch(r,this.D)},
+  impSetT(r,v){const d=(this.D.disciplines||[]).find(z=>String(z.id)===v);r.target=d?d.id:null},
+  impBulk(v){if(v)this.imp.rows.filter(r=>!r.ver).forEach(r=>this.impSetVer(r,v))},
+  impCands(r){return(this.D.disciplines||[]).filter(d=>d.version_id===r.ver).sort((a,b)=>a.name.localeCompare(b.name,'uk'))},
+  async impRun(){const I=this.imp,rows=I.rows.filter(r=>r.on);
+   if(!rows.length)return this.notify('Нічого не відмічено','err');
+   const bad=rows.filter(r=>!r.name.trim()||(!r.ver&&!r.target));
+   if(bad.length)return this.notify('Оберіть версію ОП (і перевірте назву) у відмічених рядках: '+bad.map(r=>r.name||'без назви').join('; '),'err');
+   const nU=rows.filter(r=>r.target).length;
+   if(!confirm('Буде створено нових дисциплін: '+(rows.length-nU)+', оновлено годин в існуючих: '+nU+'. Продовжити?'))return;
+   let nN=0,nUp=0;
+   try{for(const r of rows){
+    const h={year:r.year,semester:r.semester,lectures:r.l,practicals:r.p,labs:r.lab,consultations:r.cons};
+    for(const k in h)if(h[k]===null||h[k]===''||h[k]===undefined)delete h[k];
+    let id=r.target;
+    if(id){const d=this.D.disciplines.find(x=>x.id===id),params=JSON.parse(JSON.stringify(d.params||{}));params.day=Object.assign(params.day||{},h);
+     const pl={params};if(r.control&&!d.control_type)pl.control_type=r.control;
+     const{error}=await sb.from('disciplines').update(pl).eq('id',id);if(error)throw error;nUp++}
+    else{const{data,error}=await sb.from('disciplines').insert({version_id:r.ver,department_id:I.dep||null,name:r.name.trim(),control_type:r.control||null,params:{day:h,part:{}}}).select('id').single();
+     if(error)throw error;id=data.id;nN++}
+    if(I.teacher&&!(this.D.discipline_teachers||[]).some(x=>x.discipline_id===id&&x.user_id===I.teacher)){
+     const{error}=await sb.from('discipline_teachers').insert({discipline_id:id,user_id:I.teacher});if(error)throw error;
+     this.D.discipline_teachers.push({discipline_id:id,user_id:I.teacher})}}
+    this.imp=null;this.notify('Готово: створено '+nN+', оновлено '+nUp)}
+   catch(e){this.err(e)}
+   this.D.disciplines=await all('disciplines');this.D.discipline_teachers=await all('discipline_teachers')},
 
   // ---- призначення ----
   has(t,key,id){return(this.D[t]||[]).some(x=>x.discipline_id===this.ad&&x[key]===id)},
