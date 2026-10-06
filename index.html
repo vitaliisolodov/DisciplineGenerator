@@ -39,6 +39,9 @@ table.mx td{width:26px;height:24px;cursor:pointer;user-select:none}
 table.mx td:hover{background:#dfe9f7}
 table.mx td.on{background:#e3f1e5;color:#1b5e20;font-weight:700}
 table.mx tr.kh th{position:static;height:auto;background:#d9e1ee;text-align:left;padding:3px 8px;left:0}
+.tb{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}.tb input,.tb select{margin:0;max-width:240px}
+th.sortable{cursor:pointer;user-select:none;white-space:nowrap}th.sortable:hover{background:#eef1f6}
+tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:200px;margin:0;font-size:13px}
 .vt{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;margin:4px auto;font-weight:600}
 .vt.nodisc{color:#8a6d00;font-style:italic}
 .mx .xdel{border:0;background:none;color:#a33;cursor:pointer;padding:0 0 3px;font-size:11px}
@@ -72,9 +75,16 @@ table.mx tr.kh th{position:static;height:auto;background:#d9e1ee;text-align:left
 <section v-if="T[tab]">
   <h3>{{T[tab].label}}</h3>
   <p v-if="!T[tab].noAdd"><button class="p" @click="addNew()">+ Додати</button></p>
+  <div class="tb">
+    <input v-model="q" type="search" placeholder="🔍 Пошук по таблиці…">
+    <span style="color:#667;font-size:13px">Показано {{viewRows.length}} з {{rowsOf(tab).length}}</span>
+    <button class="s" v-if="q||sk||Object.values(cf).some(Boolean)" @click="resetView">Скинути фільтри</button>
+  </div>
   <table>
-    <tr><th v-for="f in T[tab].f" :key="f.k" :title="hint(f)">{{f.l}}</th><th></th></tr>
-    <tr v-for="r in rowsOf(tab)" :key="r.id">
+    <tr><th v-for="f in T[tab].f" :key="f.k" class="sortable" :title="(hint(f)?hint(f)+' — ':'')+'натисніть, щоб сортувати'" @click="sortBy(f)">{{f.l}} <span style="color:#889">{{sk===f.k?(sd>0?'▲':'▼'):'⇅'}}</span></th><th></th></tr>
+    <tr class="flt" v-if="T[tab].f.some(f=>f.ref||f.opts)"><td v-for="f in T[tab].f" :key="f.k">
+      <select v-if="f.ref||f.opts" v-model="cf[f.k]"><option :value="undefined">Усі</option><option v-for="o in opts(f)" :key="o.id" :value="o.id">{{o.l}}</option></select></td><td></td></tr>
+    <tr v-for="r in viewRows" :key="r.id">
       <td v-for="f in T[tab].f" :key="f.k">{{show(r,f)}}</td>
       <td><button class="s" @click="edit(r)">✎</button>
           <button class="s" v-if="!T[tab].noDel&&isAdmin" @click="del(r)">✕</button></td>
@@ -178,19 +188,26 @@ table.mx tr.kh th{position:static;height:auto;background:#d9e1ee;text-align:left
       <button class="p" @click="addCol">+ Додати колонку</button>
       <small style="flex-basis:100%">Колонки з курсивом — дисципліни ще не створені. Клік по клітинці ставить/знімає «+» і зберігається одразу.</small>
     </div>
+    <div class="tb">
+      <select v-model="msort"><option value="code">Колонки: за кодом (ОК, потім ВК)</option><option value="added">Колонки: у порядку додавання</option></select>
+      <select v-model="mpre"><option value="">Усі колонки</option><option value="0">Лише ОК</option><option value="1">Лише ВК</option><option value="2">Інші коди</option></select>
+      <input v-model="mq" type="search" placeholder="🔍 Код або назва дисципліни…">
+      <select v-model="mkind"><option value="">Усі компетентності</option><option v-for="k in KORD" :key="k" :value="k">{{KL[k]}}</option></select>
+      <span style="color:#667;font-size:13px">Колонок: {{matrixView.length}} з {{matrixCols.length}}</span>
+    </div>
     <p v-if="!compRows.length">Для цієї версії ще немає компетенцій — спершу додайте їх у вкладці «Компетенції».</p>
     <div class="mwrap" v-else>
       <table class="mx">
         <thead><tr><th class="mc">Компетентність</th>
-          <th v-for="col in matrixCols" :key="col.code" :title="colTitle(col)">
+          <th v-for="col in matrixView" :key="col.code" :title="colTitle(col)">
             <div class="vt" :class="{nodisc:!col.disc}">{{col.code}}</div>
             <button class="xdel" @click="delCol(col)" title="Видалити колонку / очистити відмітки">✕</button></th></tr></thead>
         <tbody>
-        <template v-for="k in KORD" :key="k"><template v-if="compRowsOf(k).length">
-          <tr class="kh"><th class="mc" :colspan="matrixCols.length+1">{{KL[k]}}</th></tr>
+        <template v-for="k in KORD" :key="k"><template v-if="(!mkind||mkind===k)&&compRowsOf(k).length">
+          <tr class="kh"><th class="mc" :colspan="matrixView.length+1">{{KL[k]}}</th></tr>
           <tr v-for="c in compRowsOf(k)" :key="c.id">
             <th class="mc" :title="c.text"><b>{{c.code}}</b> {{c.text}}</th>
-            <td v-for="col in matrixCols" :key="col.code" :class="{on:mset.has(mv+'|'+NCf(col.code)+'|'+c.id)}" @click="mtoggle(col,c)">{{mset.has(mv+'|'+NCf(col.code)+'|'+c.id)?'+':''}}</td>
+            <td v-for="col in matrixView" :key="col.code" :class="{on:mset.has(mv+'|'+NCf(col.code)+'|'+c.id)}" @click="mtoggle(col,c)">{{mset.has(mv+'|'+NCf(col.code)+'|'+c.id)?'+':''}}</td>
           </tr></template></template>
         </tbody>
       </table>
@@ -323,12 +340,17 @@ table.mx tr.kh th{position:static;height:auto;background:#d9e1ee;text-align:left
 <!-- Статистика -->
 <section v-else-if="tab==='stats'">
   <h3>Готовність документів</h3>
+  <div class="tb">
   <select v-model="sv"><option value="">Усі версії ОП</option>
     <option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option></select>
+  <select v-model="stF"><option value="">Усі статуси</option><option value="norpnd">РПНД не готовий</option><option value="nosyl">Силабус не готовий</option><option value="noteach">Без викладача</option><option value="done">Обидва документи готові</option></select>
+  <input v-model="stQ" type="search" placeholder="🔍 Дисципліна, викладач…">
+  <span style="color:#667;font-size:13px">Показано {{statView.length}} з {{statRows.length}}</span>
+  </div>
   <p>РПНД: <b>{{statRows.filter(r=>r.rpnd).length}}</b> з {{statRows.length}} · Силабус: <b>{{statRows.filter(r=>r.syl).length}}</b> з {{statRows.length}}
     <button class="s" @click="exportCsv">Завантажити CSV</button></p>
-  <table><tr><th>Версія ОП</th><th>Дисципліна</th><th>Викладачі</th><th>РПНД</th><th>Силабус</th></tr>
-    <tr v-for="r in statRows" :key="r.d.id"><td>{{r.ver}}</td><td>{{r.d.name}}</td>
+  <table><tr><th v-for="h in [['ver','Версія ОП'],['name','Дисципліна'],['teachers','Викладачі'],['rpnd','РПНД'],['syl','Силабус']]" :key="h[0]" class="sortable" @click="stSort(h[0])">{{h[1]}} <span style="color:#889">{{stS===h[0]?(stD>0?'▲':'▼'):'⇅'}}</span></th></tr>
+    <tr v-for="r in statView" :key="r.d.id"><td>{{r.ver}}</td><td>{{r.d.name}}</td>
       <td><span v-if="r.teachers">{{r.teachers}}</span><span v-else style="color:#c62828">не призначено</span></td>
       <td>{{r.rpnd?'✔ '+fmt(r.rpnd):'—'}}</td><td>{{r.syl?'✔ '+fmt(r.syl):'—'}}</td></tr>
   </table>
@@ -420,6 +442,7 @@ const TABLES=[...Object.keys(T),'competencies','discipline_competencies','discip
 const KINDS={IntegralCompetency:'IK',GeneralCompetencies:'ZK',SpecialCompetencies:'FK',LearningCompetencies:'RN'};
 const KORD=['IK','ZK','FK','RN'];
 const NC=x=>(x||'').toLowerCase().replace(/\s+/g,'');          // код дисципліни: без пробілів і регістру
+const colRank=c=>{const p=((c||'').match(/^[^\d]*/)[0]).toUpperCase().replace(/[^A-ZА-ЯІЇЄҐ]/g,'').replace(/O/g,'О').replace(/K/g,'К').replace(/B/g,'В');return p==='ОК'?0:p==='ВК'?1:2};   // ОК → ВК → решта
 const NK=x=>(x||'').toLowerCase().replace(/[\s.]+/g,'');      // код компетенції: ЗК.1 = ЗК 1 = зк1
 const KL={IK:'Інтегральна',ZK:'Загальні',FK:'Спеціальні (фахові)',RN:'Результати навчання'};
 const PFX={IK:'ІК',ZK:'ЗК',FK:'ФК',RN:'РН'};
@@ -499,7 +522,7 @@ const clean=t=>(t||'').replace(/^\s*(ІК|ЗК|ФК|ПРН|РН|Р)\.?\s?\d+\.?\
 async function all(t){let o=[],i=0;for(;;){const{data,error}=await sb.from(t).select('*').range(i,i+999);if(error)throw error;o=o.concat(data);if(data.length<1000)return o;i+=1000}}
 
 Vue.createApp({
- data(){return{T,KL,KORD,HOURS,HF,LISTS,TXT1,TXT2,EX,dsel:'',dd:null,dstate:'',tpl:{},TPLS:[['rpnd','РПНД'],['syllabus','Силабус']],sigs:{},sigUrl:{},xsrc:'',xclone:'',xopt:{doc:true,comps:true,params:false},XST:{exact:'✔ без змін',moved:'↔ змінився код',reworded:'✎ змінилось формулювання',missing:'✖ немає в цій версії — не буде перенесена'},YEARS,APF,APD,ay:new Date().getFullYear(),ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,sv:'',mv:'',mcode:'',mimp:'',nc:{kind:'ZK',text:''},
+ data(){return{T,KL,KORD,HOURS,HF,LISTS,TXT1,TXT2,EX,dsel:'',dd:null,dstate:'',tpl:{},TPLS:[['rpnd','РПНД'],['syllabus','Силабус']],sigs:{},sigUrl:{},xsrc:'',xclone:'',xopt:{doc:true,comps:true,params:false},XST:{exact:'✔ без змін',moved:'↔ змінився код',reworded:'✎ змінилось формулювання',missing:'✖ немає в цій версії — не буде перенесена'},YEARS,APF,APD,ay:new Date().getFullYear(),ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,D:{},form:null,cv:'',ad:'',drag:null,sv:'',q:'',sk:'',sd:1,cf:{},stQ:'',stS:'ver',stD:1,stF:'',msort:'code',mpre:'',mq:'',mkind:'',mv:'',mcode:'',mimp:'',nc:{kind:'ZK',text:''},
   tabs:[['faculties','Факультети'],['departments','Кафедри'],['programs','Програми'],['program_versions','Версії ОП'],['comp','Компетенції'],['matrix','Матриця'],['disciplines','Дисципліни'],['assign','Призначення'],['doc','Документ'],['approvals','Затвердження'],['templates','Шаблони'],['sig','Мій підпис'],['stats','Статистика'],['profiles','Користувачі']]}},
  async mounted(){const{data}=await sb.auth.getSession();await this.setSession(data.session);this.ready=true},
  watch:{
@@ -618,8 +641,24 @@ Vue.createApp({
    const have=new Set(cols.map(c=>NC(c.code)));
    (this.D.disciplines||[]).filter(d=>d.version_id===v&&d.code&&!have.has(NC(d.code))).forEach(d=>{have.add(NC(d.code));cols.push({code:d.code,sort:1e9,virtual:true})});
    const dn=new Set((this.D.disciplines||[]).filter(d=>d.version_id===v).map(d=>NC(d.code)));
-   cols.forEach(c=>c.disc=dn.has(NC(c.code)));
-   return cols.sort((a,b)=>a.sort-b.sort||a.code.localeCompare(b.code,'uk',{numeric:true}))},
+   cols.forEach(c=>{c.disc=dn.has(NC(c.code));c.rank=colRank(c.code)});
+   const nat=(a,b)=>a.code.localeCompare(b.code,'uk',{numeric:true});
+   return cols.sort(this.msort==='code'?(a,b)=>a.rank-b.rank||nat(a,b):(a,b)=>a.sort-b.sort||nat(a,b))},
+  matrixView(){const q=NC(this.mq);return this.matrixCols.filter(c=>(this.mpre===''||String(c.rank)===this.mpre)&&(!q||NC(this.colTitle(c)).includes(q)))},
+  viewRows(){const t=this.tab;if(!T[t])return[];const fs=T[t].f,q=this.q.trim().toLowerCase();
+   let a=this.rowsOf(t).filter(r=>fs.every(f=>this.cf[f.k]===undefined||this.cf[f.k]===null||String(r[f.k])===String(this.cf[f.k]))
+     &&(!q||fs.some(f=>String(this.show(r,f)??'').toLowerCase().includes(q))));
+   const f=fs.find(x=>x.k===this.sk);
+   if(f){const d=this.sd;a=[...a].sort((x,y)=>{const A=this.show(x,f),B=this.show(y,f),ea=A==null||A==='',eb=B==null||B==='';
+     if(ea||eb)return ea===eb?0:(ea?1:-1);                 // порожні — завжди в кінці
+     return d*(f.num?A-B:String(A).localeCompare(String(B),'uk',{numeric:true}))})}
+   return a},
+  statView(){const q=this.stQ.trim().toLowerCase(),f=this.stF;
+   let a=this.statRows.filter(r=>(!q||(r.ver+' '+r.d.name+' '+r.teachers).toLowerCase().includes(q))
+     &&(!f||(f==='norpnd'?!r.rpnd:f==='nosyl'?!r.syl:f==='noteach'?!r.teachers:(r.rpnd&&r.syl))));
+   const key={ver:r=>r.ver,name:r=>r.d.name,teachers:r=>r.teachers,rpnd:r=>r.rpnd||'',syl:r=>r.syl||''}[this.stS],d=this.stD;
+   return[...a].sort((x,y)=>{const A=key(x),B=key(y);if((A==='')!==(B==='')) return A===''?1:-1;
+     return d*String(A).localeCompare(String(B),'uk',{numeric:true})||x.ver.localeCompare(y.ver)||x.d.name.localeCompare(y.d.name,'uk')})},
   compRows(){return(this.D.competencies||[]).filter(c=>c.version_id===this.mv).sort((a,b)=>a.sort-b.sort)},
   ass(){const d=(this.D.disciplines||[]).find(x=>x.id===this.ad);if(!d||!d.code)return null;
    const ids=this.matrixIds(d),cur=(this.D.discipline_competencies||[]).filter(x=>x.discipline_id===d.id).map(x=>x.competency_id);
@@ -631,7 +670,7 @@ Vue.createApp({
  methods:{
   notify(t,k='ok'){this.toast={t,k};clearTimeout(this._t);this._t=setTimeout(()=>this.toast=null,k==='ok'?2500:6000)},
   err(e){const m=e.message||String(e);this.notify(m.includes('coerce')||m.includes('row-level')?'Немає прав на цю дію':'Помилка: '+m,'err')},
-  go(t){this.tab=t;this.form=null},
+  go(t){this.tab=t;this.form=null;this.resetView()},
   prep(f){if(this.tab==='disciplines'){if(!f.id&&!f.department_id)f.department_id=this.profile.department_id||null;f.params=f.params||{};f.params.day=f.params.day||{};f.params.part=f.params.part||{};f.teachers=(this.D.discipline_teachers||[]).filter(x=>x.discipline_id===f.id).map(x=>x.user_id)}return f},
   edit(r){this.form=this.prep(JSON.parse(JSON.stringify(r)))},
   addNew(){this.form=this.prep({})},
@@ -808,7 +847,7 @@ Vue.createApp({
    if(error){ev.target.checked=!on;return this.err(error)}
    this.notify(on?'Позначено як готове':'Позначку знято');this.D.documents=await all('documents')},
   exportCsv(){const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-   const rows=[['Версія ОП','Дисципліна','Викладачі','РПНД','Силабус'],...this.statRows.map(r=>[r.ver,r.d.name,r.teachers,r.rpnd?this.fmt(r.rpnd):'',r.syl?this.fmt(r.syl):''])];
+   const rows=[['Версія ОП','Дисципліна','Викладачі','РПНД','Силабус'],...this.statView.map(r=>[r.ver,r.d.name,r.teachers,r.rpnd?this.fmt(r.rpnd):'',r.syl?this.fmt(r.syl):''])];
    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+rows.map(r=>r.map(q).join(';')).join('\n')],{type:'text/csv'}));a.download='statystyka.csv';a.click()},
   async del(r){if(!confirm('Видалити запис? Пов’язані дані також буде видалено.'))return;
    const{error}=await sb.from(this.tab).delete().eq('id',r.id);if(error)return this.err(error);this.notify('Видалено');await this.loadAll()},
@@ -851,6 +890,10 @@ Vue.createApp({
    const{error}=await sb.from('competencies').upsert(rows,{onConflict:'version_id,code'});
    ev.target.value='';if(error)return this.err(error);this.notify('Імпортовано: '+rows.length);await this.reloadComp()},
 
+  // ---- сортування та фільтри списків ----
+  sortBy(f){if(this.sk===f.k)this.sd=-this.sd;else{this.sk=f.k;this.sd=1}},
+  resetView(){this.q='';this.sk='';this.sd=1;this.cf={}},
+  stSort(k){if(this.stS===k)this.stD=-this.stD;else{this.stS=k;this.stD=1}},
   // ---- матриця відповідності ----
   NCf:NC,
   compRowsOf(k){return this.compRows.filter(c=>c.kind===k)},
