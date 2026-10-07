@@ -48,6 +48,9 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
 tr.eg td{border-top:2px solid #8a96ad}
 .pcard{border:1px solid #cdd3df;border-radius:6px;padding:8px 12px;margin:10px 0;background:#fafbfd}
 .prow{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}.prow label{margin:0!important}.prow input{max-width:110px!important}
+.dst{font-size:15px;line-height:1;padding:3px 7px!important;border:1px solid currentColor!important;background:none}
+.dst-red{color:#c62828}.dst-yellow{color:#d08a00}.dst-green{color:#2e7d32}.dst-undefined{color:#889}
+.dst-t{white-space:nowrap;font-size:13px}
 .pe{color:#c62828;margin:2px 0}.pw{color:#b26a00;margin:2px 0}
 </style>
 </head>
@@ -183,7 +186,8 @@ tr.eg td{border-top:2px solid #8a96ad}
     </template>
   </td>
 
-  <td><button class="s" @click="edit(r)">✎</button>
+  <td style="white-space:nowrap"><button v-if="tab==='disciplines'" class="s dst" :class="'dst-'+(docStat[r.id]||{}).level" :title="docTip(r)" @click="openDoc(r)">▤</button>
+<button class="s" @click="edit(r)">✎</button>
 <button class="s" v-if="!T[tab].noDel&&isAdmin" @click="del(r)">✕</button></td>
 </tr>
 </table>
@@ -700,7 +704,7 @@ tr.eg td{border-top:2px solid #8a96ad}
 
 <!-- Документ -->
 <section v-else-if="tab==='doc'">
-<h3>Документ дисципліни</h3>
+<h3>Документ дисципліни <button class="s" @click="go('disciplines')" style="font-weight:normal">← до списку дисциплін</button></h3>
 <select v-model="dsel"><option value="">— оберіть дисципліну —</option>
 <template v-for="g in discOpts" :key="g.year">
 <optgroup :label="g.year?g.year+'/'+(g.year+1)+' н.р.':'Без навчального року'">
@@ -748,14 +752,14 @@ tr.eg td{border-top:2px solid #8a96ad}
 <small>Вводьте лише лекції, практичні, лабораторні, консультації та самостійну роботу. «Усього» та підсумки рахуються автоматично й перевіряються за описом дисципліни. Теми нумеруються наскрізь.</small>
 <div v-for="(m,mi) in dd.modules" :key="mi" style="border:1px solid #cdd;border-radius:6px;padding:8px;margin:10px 0;overflow-x:auto">
 <p><b v-if="!m.ind">Змістовний модуль {{mi+1}}.</b> <input v-model="m.name" :placeholder="m.ind?'Індивідуальні завдання':'Назва модуля'" style="width:55%">
-<button class="s" v-if="!m.ind" @click="mv(dd.modules,mi,-1)">↑</button><button class="s" v-if="!m.ind" @click="mv(dd.modules,mi,1)">↓</button><button class="s" @click="rm(dd.modules,mi,true)">✕</button></p>
+<button class="s" v-if="!m.ind" @click="mvItem(dd.modules,mi,-1)">↑</button><button class="s" v-if="!m.ind" @click="mvItem(dd.modules,mi,1)">↓</button><button class="s" @click="rm(dd.modules,mi,true)">✕</button></p>
 <table>
 <tr><th>Тема</th><template v-for="fm in forms" :key="fm"><th v-for="h in HF" :key="h[0]">{{h[1]}}{{fm==='part'?' (з)':''}}</th><th>Усього{{fm==='part'?' (з)':''}}</th></template><th></th></tr>
 <tr v-for="(t,ti) in m.topics" :key="ti">
 <td style="min-width:260px"><b v-if="!m.ind">Тема {{topicNo(mi,ti)}}.</b> <input v-model="t.title" :placeholder="m.ind?'Напр.: Індивідуальне графічне завдання та реферативні завдання':'Назва теми'" style="width:85%">
 <textarea v-model="t.description" rows="1" placeholder="Опис теми для розділу 3 (необов’язково)"></textarea></td>
 <template v-for="fm in forms" :key="fm"><td v-for="h in HF" :key="h[0]"><input type="number" min="0" step="any" v-model.number="t[fm][h[0]]" style="width:52px"></td><td><b>{{calc.mods[mi].topics[ti][fm].total}}</b></td></template>
-<td style="white-space:nowrap"><button class="s" @click="mv(m.topics,ti,-1)">↑</button><button class="s" @click="mv(m.topics,ti,1)">↓</button><button class="s" @click="rm(m.topics,ti)">✕</button></td>
+<td style="white-space:nowrap"><button class="s" @click="mvItem(m.topics,ti,-1)">↑</button><button class="s" @click="mvItem(m.topics,ti,1)">↓</button><button class="s" @click="rm(m.topics,ti)">✕</button></td>
 </tr>
 <tr v-if="!m.ind" style="background:#eef"><td><b>Разом за модулем {{mi+1}}</b></td><template v-for="fm in forms" :key="fm"><td v-for="h in HF" :key="h[0]">{{calc.mods[mi].sum[fm][h[0]]}}</td><td><b>{{calc.mods[mi].sum[fm].total}}</b></td></template><td></td></tr>
 </table>
@@ -770,7 +774,7 @@ tr.eg td{border-top:2px solid #8a96ad}
 <details class="card" v-for="L in LISTS" :key="L[0]"><summary><b>{{L[1]}}</b> — усього {{calc.lists[L[0]]}} год</summary>
 <table><tr v-for="(r,i) in dd[L[0]]" :key="i"><td>{{i+1}}</td><td><input v-model="r.title" style="width:100%" placeholder="Назва теми"></td>
 <td><input type="number" min="0" step="any" v-model.number="r.hours" style="width:70px"></td>
-<td style="white-space:nowrap"><button class="s" @click="mv(dd[L[0]],i,-1)">↑</button><button class="s" @click="mv(dd[L[0]],i,1)">↓</button><button class="s" @click="rm(dd[L[0]],i)">✕</button></td></tr></table>
+<td style="white-space:nowrap"><button class="s" @click="mvItem(dd[L[0]],i,-1)">↑</button><button class="s" @click="mvItem(dd[L[0]],i,1)">↓</button><button class="s" @click="rm(dd[L[0]],i)">✕</button></td></tr></table>
 <button class="s" @click="dd[L[0]].push({title:'',hours:null})">+ Додати</button>
 </details>
 
@@ -778,7 +782,7 @@ tr.eg td{border-top:2px solid #8a96ad}
 <small>Блок — це змістовний модуль із видами робіт і балами. Назву блока можна залишити порожньою (наприклад, для індивідуального завдання) — тоді рядка заголовка не буде.</small>
 <div v-for="(b,bi) in dd.blocks" :key="bi" style="border:1px solid #cdd;border-radius:6px;padding:8px;margin:8px 0">
 <input v-model="b.title" placeholder="Назва блока, напр.: 1-й змістовний модуль" style="width:60%">
-<button class="s" @click="mv(dd.blocks,bi,-1)">↑</button><button class="s" @click="mv(dd.blocks,bi,1)">↓</button><button class="s" @click="rm(dd.blocks,bi,true)">✕</button>
+<button class="s" @click="mvItem(dd.blocks,bi,-1)">↑</button><button class="s" @click="mvItem(dd.blocks,bi,1)">↓</button><button class="s" @click="rm(dd.blocks,bi,true)">✕</button>
 <table><tr v-for="(it,ii) in b.items" :key="ii"><td><input v-model="it.name" placeholder="Вид роботи" style="width:100%"></td>
 <td><input v-model="it.score" placeholder="6…10" style="width:110px"></td><td><button class="s" @click="rm(b.items,ii)">✕</button></td></tr></table>
 <button class="s" @click="b.items.push({name:'',score:''})">+ Вид роботи</button>
@@ -833,16 +837,25 @@ tr.eg td{border-top:2px solid #8a96ad}
 <div class="tb">
 <select v-model="sv"><option value="">Усі версії ОП</option>
 <option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option></select>
-<select v-model="stF"><option value="">Усі статуси</option><option value="norpnd">РПНД не готовий</option><option value="nosyl">Силабус не готовий</option><option value="noteach">Без викладача</option><option value="done">Обидва документи готові</option></select>
+<select v-model="stF"><option value="">Усі статуси</option><option value="norpnd">РПНД не готовий</option><option value="nosyl">Силабус не готовий</option><option value="noteach">Без викладача</option><option value="done">Обидва документи готові</option><option value="st_red">Документ: години не заповнені</option><option value="st_yellow">Документ: є попередження</option><option value="st_green">Документ: готовий до вивантаження</option></select>
 <input v-model="stQ" type="search" placeholder="🔍 Дисципліна, викладач…">
 <span style="color:#667;font-size:13px">Показано {{statView.length}} з {{statRows.length}}</span>
 </div>
 <p>РПНД: <b>{{statRows.filter(r=>r.rpnd).length}}</b> з {{statRows.length}} · Силабус: <b>{{statRows.filter(r=>r.syl).length}}</b> з {{statRows.length}}
 <button class="s" @click="exportCsv">Завантажити CSV</button></p>
-<table><tr><th v-for="h in [['ver','Версія ОП'],['name','Дисципліна'],['teachers','Викладачі'],['rpnd','РПНД'],['syl','Силабус']]" :key="h[0]" class="sortable" @click="stSort(h[0])">{{h[1]}} <span style="color:#889">{{stS===h[0]?(stD>0?'▲':'▼'):'⇅'}}</span></th></tr>
+<p>Документи («РПНД»/«Силабус») по {{statView.length}} показаних дисциплінах одним архівом:
+<select v-model="zipKind"><option value="both">РПНД + силабуси</option><option value="rpnd">лише РПНД</option><option value="syllabus">лише силабуси</option></select>
+<button class="p" :disabled="zipBusy||!statView.length" @click="downloadZip">⬇ Архів (ZIP)</button>
+<small v-if="zipBusy" style="color:#b26a00">⏳ {{zipState}}</small>
+<small v-else style="color:#667">Папки за версіями ОП; зверніть увагу на колонку «Заповнення».</small></p>
+<table><tr><th v-for="h in [['ver','Версія ОП'],['name','Дисципліна'],['teachers','Викладачі'],['st','Заповнення'],['rpnd','РПНД'],['syl','Силабус']]" :key="h[0]" class="sortable" @click="stSort(h[0])">{{h[1]}} <span style="color:#889">{{stS===h[0]?(stD>0?'▲':'▼'):'⇅'}}</span></th><th>Файли</th></tr>
 <tr v-for="r in statView" :key="r.d.id"><td>{{r.ver}}</td><td>{{r.d.name}}</td>
 <td><span v-if="r.teachers">{{r.teachers}}</span><span v-else style="color:#c62828">не призначено</span></td>
-<td>{{r.rpnd?'✔ '+fmt(r.rpnd):'—'}}</td><td>{{r.syl?'✔ '+fmt(r.syl):'—'}}</td></tr>
+<td><span class="dst-t" :class="'dst-'+(docStat[r.d.id]||{}).level" :title="(docStat[r.d.id]||{}).title">● {{(docStat[r.d.id]||{}).label}}</span></td>
+<td>{{r.rpnd?'✔ '+fmt(r.rpnd):'—'}}</td><td>{{r.syl?'✔ '+fmt(r.syl):'—'}}</td>
+<td style="white-space:nowrap"><button class="s" title="Сформувати і завантажити РПНД" @click="downloadFor('rpnd',r.d)">⬇ РПНД</button>
+<button class="s" title="Сформувати і завантажити силабус" @click="downloadFor('syllabus',r.d)">⬇ Силабус</button>
+<button class="s dst" :class="'dst-'+(docStat[r.d.id]||{}).level" title="Відкрити документ для редагування" @click="openDoc(r.d)">▤</button></td></tr>
 </table>
 </section>
 
@@ -1380,7 +1393,10 @@ function parseCurriculumNumbered(sheets) {
     exam: col(/екзамен|exam/i, 2), pass: col(/залік|pass/i, 3), cw: col(/курсов|course/i, 4),
     ects: col(/єктс|ects/i, 5),
     lec: col(/лекці|lection/i, 8), prac: col(/практичн|practical/i, 9),
-    lab: col(/лаборат|laboratory/i, 10), cons: col(/консульт|consult/i, 11)
+    lab: col(/лаборат|laboratory/i, 10), cons: col(/консульт|consult/i, 11),
+    // G «Всьго годин / Number of hours» (без «Total» — це аудиторні), M «Обсяг СРС»
+    total: (() => { const i = heads.findIndex((h, k) => k > 1 && /number of hours/i.test(h) && !/total/i.test(h)); return i >= 0 ? i : 6; })(),
+    srs: (() => { const i = heads.findIndex((h, k) => k > 1 && /срс|independent work/i.test(h)); return i >= 0 ? i : 12; })()
   };
 
   // Блоки семестрів: рядок шапки з числами 1,2,3… (по 4 колонки: лк, пз, лб, конс)
@@ -1455,7 +1471,12 @@ function parseCurriculumNumbered(sheets) {
       hours_practicals: H.prac,
       hours_labs: H.lab,
       hours_consultations: H.cons,
-      hours_by_semester: hbs,
+      hours_by_semester: (() => {
+        // «Всього» (G) і СРС (M) — на всю дисципліну; зберігаємо лише для одного семестру (багатосеместрові — викладач сам)
+        const ks = Object.keys(hbs), g = num(r[C.total]), m = num(r[C.srs]);
+        if (ks.length === 1) { if (g) hbs[ks[0]].total = g; if (m) hbs[ks[0]].self = m; }
+        return hbs;
+      })(),
       matched: null,
       sort: items.length
     });
@@ -1604,7 +1625,10 @@ function planHoursFor(item, semester) {
   if (h && typeof h === 'object' && Object.keys(h).length) {
     const x = h[semester];
     if (!x) return { offSem: true };
-    return { lectures: +x.lectures || 0, practicals: +x.practicals || 0, labs: +x.labs || 0, consultations: +x.consultations || 0 };
+    const o = { lectures: +x.lectures || 0, practicals: +x.practicals || 0, labs: +x.labs || 0, consultations: +x.consultations || 0 };
+    if (+x.total) o.total = +x.total;
+    if (+x.self) o.self = +x.self;
+    return o;
   }
   // запасний варіант: підсумкові години, якщо позиція плану в одному семестрі
   const single = !(Array.isArray(item.semesters) && item.semesters.length > 1);
@@ -1748,7 +1772,7 @@ data(){return{
   YEARS,APF,APD,PER,ROLES,FLAT:{faculties:true,departments:true},pf:null,perMissing:false,ay:new Date().getFullYear(),
   ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,
   D:{},form:null,cv:'',ad:'',drag:null,sv:'',q:'',sk:'',sd:1,cf:{},
-  stQ:'',stS:'ver',stD:1,stF:'',
+  stQ:'',stS:'ver',stD:1,stF:'',zipKind:'both',zipBusy:false,zipState:'',
   msort:'code',mpre:'',mq:'',mkind:'',mv:'',mcode:'',mimp:'',
   nc:{kind:'ZK',text:''},
   sy:'',
@@ -1913,6 +1937,8 @@ if(!c.SigFlags.dep)m.push('Підписи завідувача кафедри й
 if(!c.GeneralCompetencies.length&&!c.SpecialCompetencies.length)m.push('Не обрано компетенції (вкладка «Компетенції»)');
 return m.concat(this.calc.warns)},
 visibleTabs(){return this.isAdmin?this.tabs:[['disciplines','Мої дисципліни'],['import','Імпорт навантаження'],['assign','Компетенції'],['doc','Документ'],['sig','Мій підпис']]},
+docStat(){const list=this.tab==='disciplines'?this.rowsOf('disciplines'):this.tab==='stats'?this.statRows.map(r=>r.d):[];
+const m={};for(const d of list)m[d.id]=this.docStatusOf(d);return m},
 statRows(){return(this.D.disciplines||[]).filter(d=>!this.sv||d.version_id===this.sv)
 .filter(d=>this.sy===''||this.studyYearOf(d)===this.sy||!this.studyYearOf(d)).map(d=>{
 const doc=this.docOf(d),ver=this.lab('program_versions',this.D.program_versions.find(v=>v.id===d.version_id));
@@ -1940,8 +1966,8 @@ if((A==='')!==(B===''))return A===''?1:-1;return d*String(A).localeCompare(Strin
 return a},
 statView(){const q=this.stQ.trim().toLowerCase(),f=this.stF;
 let a=this.statRows.filter(r=>(!q||(r.ver+' '+r.d.name+' '+r.teachers).toLowerCase().includes(q))
-&&(!f||(f==='norpnd'?!r.rpnd:f==='nosyl'?!r.syl:f==='noteach'?!r.teachers:(r.rpnd&&r.syl))));
-const key={ver:r=>r.ver,name:r=>r.d.name,teachers:r=>r.teachers,rpnd:r=>r.rpnd||'',syl:r=>r.syl||''}[this.stS],d=this.stD;
+&&(!f||(f==='norpnd'?!r.rpnd:f==='nosyl'?!r.syl:f==='noteach'?!r.teachers:f.startsWith('st_')?((this.docStat[r.d.id]||{}).level===f.slice(3)):(r.rpnd&&r.syl))));
+const key={ver:r=>r.ver,name:r=>r.d.name,teachers:r=>r.teachers,rpnd:r=>r.rpnd||'',syl:r=>r.syl||'',st:r=>({red:'1',yellow:'2',green:'3'}[(this.docStat[r.d.id]||{}).level]||'9')}[this.stS],d=this.stD;
 return[...a].sort((x,y)=>{const A=key(x),B=key(y);if((A==='')!==(B==='')) return A===''?1:-1;
 return d*String(A).localeCompare(String(B),'uk',{numeric:true})||x.ver.localeCompare(y.ver)||x.d.name.localeCompare(y.d.name,'uk')})},
 compRows(){return(this.D.competencies||[]).filter(c=>c.version_id===this.mv).sort((a,b)=>a.sort-b.sort)},
@@ -2274,16 +2300,34 @@ async saveTeachers(id,list){const cur=(this.D.discipline_teachers||[]).filter(x=
 const add=list.filter(u=>!cur.includes(u)),rem=cur.filter(u=>!list.includes(u));
 if(add.length){const{error}=await sb.from('discipline_teachers').insert(add.map(u=>({discipline_id:id,user_id:u})));if(error)this.err(error)}
 for(const u of rem){const{error}=await sb.from('discipline_teachers').delete().match({discipline_id:id,user_id:u});if(error)this.err(error)}},
+// Виконати calc/ctx/missing для будь-якої дисципліни (а не лише вибраної на вкладці «Документ»)
+evalDoc(d,dd){const C=this.$options.computed,o=Object.create(this),def=(k,v)=>Object.defineProperty(o,k,{value:v,configurable:true});
+def('dd',dd);def('curDisc',d);def('dsel',d.id);
+def('forms',C.forms.call(o));def('calc',C.calc.call(o));def('ctx',C.ctx.call(o));
+return{calc:o.calc,ctx:o.ctx,missing:C.missing.call(o)}},
+// Готовність документа: red — не проставлені години (денна/заочна); yellow — є попередження; green — можна вивантажувати
+docStatusOf(d){try{const P=d.params||{},forms=P.part_enabled?['day','part']:['day'];
+const noH=forms.filter(fm=>!['total','lectures','practicals','labs','consultations','selfstudy'].some(k=>(P[fm]||{})[k]));
+const ev=this.evalDoc(d,this.mkDd(d)),w=ev.missing;
+if(noH.length)return{level:'red',label:'години не заповнені',n:w.length,title:'⛔ Не проставлені години: '+noH.map(f=>f==='day'?'денна форма':'заочна форма').join(', ')+(w.length?'\n\nЩе зауважень: '+w.length:'')};
+if(w.length)return{level:'yellow',label:'є попередження ('+w.length+')',n:w.length,title:'⚠ Перевірте перед завантаженням:\n• '+w.slice(0,6).join('\n• ')+(w.length>6?'\n… ще '+(w.length-6):'')};
+return{level:'green',label:'готово до вивантаження',n:0,title:'✔ Усе заповнено — документ можна вивантажувати'}}
+catch(e){return{level:'yellow',label:'не вдалося перевірити',n:0,title:'Не вдалося перевірити: '+(e.message||e)}}},
+docTip(d){const x=this.docStat[d.id];return(x?x.title+'\n\n':'')+'Натисніть, щоб відкрити документ дисципліни'},
+openDoc(d){this.go('doc');this.dsel=d.id;window.scrollTo(0,0)},
+mkDd(d){const doc=this.docOf(d);
+const dd=Object.assign({year:new Date().getFullYear(),Goal:'',Know:'',BeAbleTo:'',Master:'',Prerequisites:'',modules:[],practicals:[],labs:[],selfstudy:[],blocks:[],
+BasicLiterature:'',AdditionalLiterature:'',Software:'',RequiredKnowledge:'',RequiredSkills:'',CriteriaSatisfactory:'',CriteriaGood:'',CriteriaExcellent:'',...DEF},
+JSON.parse(JSON.stringify((doc&&doc.data)||{})));
+dd.modules.forEach(m=>m.topics.forEach(t=>{t.day=t.day||{};t.part=t.part||{}}));
+return dd},
 async loadDoc(){clearTimeout(this._dt);
 if(this.dd&&JSON.stringify(this.dd)!==this._saved)await this.saveDoc();
 this.dd=null;this.dstate='';const d=this.curDisc;if(!d)return;
 let doc=this.docOf(d);
 if(!doc){const{error}=await sb.from('documents').insert({discipline_id:d.id,owner_id:this.session.user.id});
 if(error)return this.err(error);this.D.documents=await all('documents');doc=this.docOf(d)}
-const dd=Object.assign({year:new Date().getFullYear(),Goal:'',Know:'',BeAbleTo:'',Master:'',Prerequisites:'',modules:[],practicals:[],labs:[],selfstudy:[],blocks:[],
-BasicLiterature:'',AdditionalLiterature:'',Software:'',RequiredKnowledge:'',RequiredSkills:'',CriteriaSatisfactory:'',CriteriaGood:'',CriteriaExcellent:'',...DEF},
-JSON.parse(JSON.stringify(doc.data||{})));
-dd.modules.forEach(m=>m.topics.forEach(t=>{t.day=t.day||{};t.part=t.part||{}}));
+const dd=this.mkDd(d);
 this._docDisc=d.id;this._saved=JSON.stringify(dd);this.dd=dd},
 async saveDoc(){if(!this.dd)return;const snap=JSON.stringify(this.dd),id=this._docDisc;
 const{error}=await sb.from('documents').update({data:JSON.parse(snap)}).eq('discipline_id',id);
@@ -2322,7 +2366,7 @@ if(rows.length){const r=await sb.from('discipline_teachers').insert(rows);if(r.e
 this.D.disciplines=await all('disciplines');this.D.discipline_teachers=await all('discipline_teachers');
 const from=s.id;this.xclone='';this.dsel=data.id;await this.$nextTick();await this._lp;
 await this.transfer(from,{doc:true,comps:true,params:false},true)},
-mv(a,i,d){const j=i+d;if(j<0||j>=a.length||(a[i]&&a[i].ind)||(a[j]&&a[j].ind))return;[a[i],a[j]]=[a[j],a[i]]},
+mvItem(a,i,d){const j=i+d;if(j<0||j>=a.length||(a[i]&&a[i].ind)||(a[j]&&a[j].ind))return;[a[i],a[j]]=[a[j],a[i]]},
 rm(a,i,ask){if(!ask||confirm('Видалити разом із усім вмістом?'))a.splice(i,1)},
 addModule(){const mod={name:'',topics:[{title:'',description:'',day:{},part:{}}]},i=this.dd.modules.findIndex(m=>m.ind);
 if(i<0)this.dd.modules.push(mod);else this.dd.modules.splice(i,0,mod)},
@@ -2344,7 +2388,7 @@ if(error||!data)return this.notify('Підпис не знайдено або н
 async delSig(f,id){if(!confirm('Видалити підпис?'))return;const path=this.sigKey(f,id),{error}=await sb.storage.from('signatures').remove([path]);
 if(error)return this.err(error);const a={...this.sigs},u={...this.sigUrl};delete a[path];delete u[path];this.sigs=a;this.sigUrl=u;this.notify('Підпис видалено')},
 // Завантаження підписів для документа: керівники — лише якщо адмін дозволив на цей рік; автори — власні підписи
-async sigImages(){const D=this.D,d=this.curDisc,y=this.dd.year;
+async sigImages(d0,y0){const D=this.D,d=d0||this.curDisc,y=y0||this.dd.year;
 const Y=Number(y)||new Date().getFullYear();
 const dep=this.entAt('departments',d.department_id,Y),fac=this.entAt('faculties',dep.faculty_id,Y);
 const ver=D.program_versions.find(v=>v.id===d.version_id)||{},prog=this.entAt('programs',ver.program_id,Y);
@@ -2356,11 +2400,13 @@ if(da.signatures_enabled&&dep.id&&!dep._none){want.HEAD=pp('department-head',dep
 want.AUTHOR=D.discipline_teachers.filter(x=>x.discipline_id===d.id).map(x=>D.profiles.find(p=>p.id===x.user_id)).filter(p=>p&&p.full_name).map(p=>'profile/'+p.id+'.png');
 const imgs={},noFile=[];
 for(const[role,paths]of Object.entries(want)){const parts=[];
-for(const pth of paths){const{data}=await sb.storage.from('signatures').download(pth);if(data){parts.push(data);if(role!=='AUTHOR')break}}
+for(const pth of paths){const data=await this.sigGet(pth);if(data){parts.push(data);if(role!=='AUTHOR')break}}
 if(!parts.length){noFile.push(role);continue}
 const blob=parts.length===1?parts[0]:await joinSignatures(parts),bytes=new Uint8Array(await blob.arrayBuffer());
 imgs[role]={bytes,...pngSize(bytes)}}
 return{imgs,noFile}},
+async sigGet(pth){const c=this._sigCache;if(c&&c.has(pth))return c.get(pth);
+const{data}=await sb.storage.from('signatures').download(pth);if(c)c.set(pth,data||null);return data},
 async loadTpl(){const{data,error}=await sb.storage.from('templates').list('');if(error)return;
 const t={};(data||[]).forEach(f=>{t[f.name.replace(/\.docx$/,'')]=f.updated_at||f.created_at});this.tpl=t},
 async uploadTpl(kind,ev){const f=ev.target.files[0];if(!f)return;
@@ -2370,10 +2416,12 @@ const{error}=await sb.storage.from('templates').upload(kind+'.docx',f,{upsert:tr
 if(error)throw error;await this.loadTpl();this.notify('Шаблон завантажено (знайдено тегів: '+n+')')}
 catch(e){const er=e.properties&&e.properties.errors;this.notify('Файл не прийнято: '+(er?er.map(x=>x.properties.explanation).join('; '):(e.message||e)),'err')}
 ev.target.value=''},
-async download(kind){
-try{const ctx=JSON.parse(JSON.stringify(this.ctx));
-const{data:tb,error:te}=await sb.storage.from('templates').download(kind+'.docx');if(te||!tb)throw new Error('Шаблон не завантажено в систему — зверніться до адміністратора');
-const doc=new window.docxtemplater(new PizZip(await tb.arrayBuffer()),{parser:tagParser,delimiters:{start:'{{',end:'}}'},paragraphLoop:true,linebreaks:true,nullGetter:()=>''});
+// Формує .docx для будь-якої дисципліни d з даними документа dd (а не лише для вибраної)
+async buildDocx(kind,d,dd,tpl){
+const ev=this.evalDoc(d,dd),ctx=JSON.parse(JSON.stringify(ev.ctx));
+let ab=tpl&&tpl[kind];
+if(!ab){const{data:tb,error:te}=await sb.storage.from('templates').download(kind+'.docx');if(te||!tb)throw new Error('Шаблон не завантажено в систему — зверніться до адміністратора');ab=await tb.arrayBuffer();if(tpl)tpl[kind]=ab}
+const doc=new window.docxtemplater(new PizZip(ab),{parser:tagParser,delimiters:{start:'{{',end:'}}'},paragraphLoop:true,linebreaks:true,nullGetter:()=>''});
 doc.render(ctx);
 const out=doc.getZip();let xml=out.file('word/document.xml').asText();
 // прибираємо порожні об'єднані рядки (блок балів без назви)
@@ -2383,12 +2431,36 @@ const text=(row.match(/<w:t(?:\s[^>]*)?>[^<]*/g)||[]).join('').replace(/<w:t[^>]
 return(row.includes('§§DEL§§')||(cells===1&&/gridSpan/.test(row)&&!text))?'':row});
 out.file('word/document.xml',xml);
 let noFile=[];
-if(kind==='rpnd'){const sg=await this.sigImages();noFile=sg.noFile;applySignatures(out,sg.imgs)}
-const blob=out.generate({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
-const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-a.download=(kind==='rpnd'?'РПНД':'Силабус')+' '+this.curDisc.name.replace(/[\\/:*?"<>|]/g,'')+' '+this.dd.year+'.docx';
-a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);this.notify(noFile.length?'Файл сформовано. Підпис не завантажено: '+noFile.map(r=>ROLE_UA[r]).join(', '):'Файл сформовано',noFile.length?'warn':'ok')}
-catch(e){const er=e.properties&&e.properties.errors;this.notify('Не вдалося сформувати файл: '+(er?er.map(x=>x.properties.explanation).join('; '):e.message),'err')}},
+if(kind==='rpnd'){const sg=await this.sigImages(d,dd.year);noFile=sg.noFile;applySignatures(out,sg.imgs)}
+const bytes=out.generate({type:'uint8array'});
+return{bytes,noFile,name:(kind==='rpnd'?'РПНД':'Силабус')+' '+d.name.replace(/[\\/:*?"<>|]/g,'')+' '+dd.year+'.docx'}},
+saveBytes(bytes,name,mime){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([bytes],{type:mime}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000)},
+dlErr(e){const er=e.properties&&e.properties.errors;return er?er.map(x=>x.properties.explanation).join('; '):(e.message||String(e))},
+async dlOne(kind,d,dd){try{const o=await this.buildDocx(kind,d,dd);
+this.saveBytes(o.bytes,o.name,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+this.notify(o.noFile.length?'Файл сформовано. Підпис не завантажено: '+o.noFile.map(r=>ROLE_UA[r]).join(', '):'Файл сформовано',o.noFile.length?'warn':'ok')}
+catch(e){this.notify('Не вдалося сформувати файл: '+this.dlErr(e),'err')}},
+async download(kind){return this.dlOne(kind,this.curDisc,this.dd)},
+async downloadFor(kind,d){return this.dlOne(kind,d,this.mkDd(d))},
+// Архів з документами всіх дисциплін, що зараз показані в статистиці (папки за версіями ОП)
+async downloadZip(){const rows=this.statView;if(!rows.length||this.zipBusy)return;
+const kinds=this.zipKind==='both'?['rpnd','syllabus']:[this.zipKind],total=rows.length*kinds.length;
+if(!confirm('Сформувати архів: '+rows.length+' дисциплін × '+kinds.length+' = '+total+' файлів?\nДля великої кількості це може тривати кілька хвилин.'))return;
+this.zipBusy=true;const zip=new PizZip(),tpl={},used=new Set(),fails=[];let n=0,noSig=0,ok=0;this._sigCache=new Map();
+const safe=x=>String(x||'').replace(/[\\/:*?"<>|]/g,'').trim()||'без_версії';
+try{for(const r of rows){const d=r.d,dd=this.mkDd(d);
+for(const k of kinds){this.zipState=(++n)+' / '+total+': '+d.name;await new Promise(res=>setTimeout(res,0));
+try{const o=await this.buildDocx(k,d,dd,tpl);let nm=safe(r.ver)+'/'+o.name,c=1;
+while(used.has(nm.toLowerCase()))nm=safe(r.ver)+'/'+o.name.replace(/\.docx$/,' ('+(++c)+').docx');
+used.add(nm.toLowerCase());zip.file(nm,o.bytes);ok++;if(o.noFile.length)noSig++}
+catch(e){const m=this.dlErr(e);fails.push(d.name+' ('+(k==='rpnd'?'РПНД':'силабус')+'): '+m);if(/Шаблон не завантажено/.test(m))throw e}}}
+if(!ok)throw new Error('Жодного файлу не сформовано');
+if(fails.length)zip.file('_ПОМИЛКИ.txt',new TextEncoder().encode(fails.join('\n')));
+const blob=zip.generate({type:'uint8array',compression:'DEFLATE'});
+this.saveBytes(blob,'Документи '+new Date().toLocaleDateString('uk-UA').replace(/\./g,'-')+'.zip','application/zip');
+this.notify('Архів сформовано: '+ok+' файлів'+(fails.length?', помилок '+fails.length+' (див. _ПОМИЛКИ.txt)':'')+(noSig?'; у '+noSig+' РПНД не всі підписи':''),fails.length||noSig?'warn':'ok')}
+catch(e){this.notify('Архів не сформовано: '+this.dlErr(e),'err')}
+finally{this.zipBusy=false;this.zipState='';this._sigCache=null}},
 ap(t,key,id){return(this.D[t]||[]).find(x=>x[key]===id&&x.year===this.ay)||{}},
 async setAp(t,key,id,col,val){
 const{error}=await sb.from(t).upsert({[key]:id,year:this.ay,[col]:(typeof val==='boolean')?val:(val||null)},{onConflict:key+',year'});
@@ -2412,7 +2484,7 @@ const{error}=await sb.from('documents').update({[col]:on?new Date().toISOString(
 if(error){ev.target.checked=!on;return this.err(error)}
 this.notify(on?'Позначено як готове':'Позначку знято');this.D.documents=await all('documents')},
 exportCsv(){const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-const rows=[['Версія ОП','Дисципліна','Викладачі','РПНД','Силабус'],...this.statView.map(r=>[r.ver,r.d.name,r.teachers,r.rpnd?this.fmt(r.rpnd):'',r.syl?this.fmt(r.syl):''])];
+const rows=[['Версія ОП','Дисципліна','Викладачі','Заповнення документа','РПНД','Силабус'],...this.statView.map(r=>[r.ver,r.d.name,r.teachers,(this.docStat[r.d.id]||{}).label||'',r.rpnd?this.fmt(r.rpnd):'',r.syl?this.fmt(r.syl):''])];
 const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+rows.map(r=>r.map(q).join(';')).join('\n')],{type:'text/csv'}));a.download='statystyka.csv';a.click()},
 async del(r){if(!confirm('Видалити запис? Пов’язані дані також буде видалено.'))return;
 const{error}=await sb.from(this.tab).delete().eq('id',r.id);if(error)return this.err(error);this.notify('Видалено');await this.loadAll()},
@@ -2694,7 +2766,10 @@ async impLoadApply() {
         const eff = effectiveHours(s);
         const dayNew = {
           year: s.course, semester: s.semester,
-          lectures: eff.lectures, practicals: eff.practicals, labs: eff.labs, consultations: eff.consultations
+          lectures: eff.lectures, practicals: eff.practicals, labs: eff.labs, consultations: eff.consultations,
+          // «Всього годин» і самостійна робота — з плану (РГЗ/КР викладач заповнює сам)
+          ...(eff.total ? { total: eff.total } : {}),
+          ...(eff.self ? { selfstudy: eff.self } : {})
         };
         const payload = {
           version_id: s.version_id,
