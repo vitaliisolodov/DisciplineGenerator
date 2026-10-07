@@ -1557,7 +1557,12 @@ async function parseLoad(file, D) {
     if (!x.on) continue;
     const buckets = new Map();
     const unresolved = [];
-    for (const g of x.groups.split('+').map(t => t.trim()).filter(Boolean)) {
+    // Групи можуть бути розділені «+», комою, крапкою з комою, пробілом чи «/» — шукаємо самі коди груп
+    const GRP = /[^\s,;+\/()]+-\d{2}-\d+/g;
+    const gtoks = String(x.groups).match(GRP) || [];
+    const leftover = String(x.groups).replace(GRP, ' ').replace(/підгр\S*\s*\d*/gi, ' ').replace(/[\s,;+\/()]+/g, ' ').trim();
+    if (leftover && /[A-Za-zА-Яа-яІіЇїЄєҐґ]{3}/.test(leftover)) unresolved.push(leftover);
+    for (const g of gtoks) {
       const m = g.match(/^(.+?)-(\d{2})-\d+/);
       if (!m) { unresolved.push(g); continue; }
       const base = m[1];
