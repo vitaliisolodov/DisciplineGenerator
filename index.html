@@ -247,9 +247,9 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
 
 <!-- Майстер імпорту -->
 <section v-else-if="tab==='import'">
-  <h3>Імпорт даних</h3>
+  <h3>{{isAdmin ? 'Імпорт даних' : 'Імпорт мого навантаження'}}</h3>
 
-  <div class="card">
+  <div class="card" v-if="isAdmin">
     <div class="tb">
       <button class="p" :class="{on:impStep==='opp'}"  @click="impStep='opp'">1. ОПП (docx)</button>
       <button class="p" :class="{on:impStep==='plan'}" @click="impStep='plan'">2. Навчальний план (xlsx)</button>
@@ -258,7 +258,7 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
   </div>
 
   <!-- 1. ОПП -->
-  <div v-if="impStep==='opp'" class="card">
+  <div v-if="isAdmin && impStep==='opp'" class="card">
     <h3>1. ОПП (docx)</h3>
     <small>Витягує назву, рівень, спеціальність, рік вступу. Компетенції не чіпає.</small>
     <p>Версія ОП:
@@ -377,7 +377,7 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
   </div>
 
   <!-- 2. План -->
-  <div v-if="impStep==='plan'" class="card">
+  <div v-if="isAdmin && impStep==='plan'" class="card">
     <h3>2. Навчальний план (xlsx)</h3>
     <small>Витягує код, назву, кредити, контроль, години. Створює curriculum_items.</small>
 <p>Версія ОП:
@@ -430,14 +430,15 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
 
   <!-- 3. Навантаження -->
   <div v-if="impStep==='load'" class="card">
-    <h3>3. Навантаження (xls)</h3>
-    <small>Розбиває на потоки за (ОП, рік вступу). Створює/оновлює disciplines.</small>
+    <h3>{{isAdmin ? '3. Навантаження (xls)' : 'Навантаження (xls)'}}</h3>
+    <small>Розбиває на потоки за (ОП, рік вступу). Створює/оновлює дисципліни.</small>
+    <small v-if="!isAdmin" style="display:block;color:#667">Можна імпортувати лише своє навантаження: прізвище та ініціали у файлі мають збігатися з вашим профілем. Години беруться з навчального плану; розбіжності з файлом підсвічуються. Дисципліни інших викладачів не змінюються.</small>
     <p>Навчальний рік:
       <select v-model.number="loadYear">
         <option v-for="y in YEARS" :key="y" :value="y">{{y}}/{{y+1}}</option>
       </select>
     </p>
-    <p>Викладач:
+    <p v-if="isAdmin">Викладач:
       <select v-model="loadTeacher">
         <option :value="null">— визначити з файлу —</option>
         <option v-for="p in profs" :key="p.id" :value="p.id">{{lab('profiles', p)}} · {{p.email}}</option>
@@ -446,6 +447,7 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
     <p><input type="file" accept=".xls,.xlsx" @change="impLoadFile"></p>
 
     <template v-if="impLoad">
+<div v-if="!isAdmin && teacherCheck" class="card" :style="{background: teacherCheck.level==='ok' ? '#e8f5e9' : teacherCheck.level==='soft' ? '#fff8e1' : '#fdecea', fontSize:'13px'}">{{teacherCheck.msg}}</div>
 <p>Викладач у файлі: <b>{{impLoad.teacherRaw}}</b> ·
    Рік: <b>{{impLoad.studyYear}}</b> ·
    Дисциплін: <b>{{impLoad.rows.length}}</b></p>
@@ -457,11 +459,12 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
     <li>Потоків (після розбиття за ОП/роком): <b>{{impLoad.rows.reduce((a,r) => a + r.streams.length, 0)}}</b></li>
     <li v-if="impLoad.rows.some(r => r.streams.some(s => !s.version_id))" style="color:#c62828">
       Потоків без версії ОП (будуть пропущені): <b>{{impLoad.rows.reduce((a, r) => a + r.streams.filter(s => !s.version_id).length, 0)}}</b>
-      <button v-if="missingVersions.length" class="s" @click="createMissingVersions" style="margin-left:8px">
+      <button v-if="isAdmin && missingVersions.length" class="s" @click="createMissingVersions" style="margin-left:8px">
         ➕ Створити відсутні версії ОП ({{missingVersions.length}})
       </button>
       <div v-if="missingVersions.length" style="font-size:12px;color:#667">
         {{missingVersions.map(m => m.abbr + ' ' + m.year).join(', ')}}
+        <span v-if="!isAdmin"> — зверніться до адміністратора, щоб додати відсутні версії ОП.</span>
       </div>
     </li>
     <li v-if="impLoad.rows.some(r => r.streams.some(s => s.diff || s.offSem))" style="color:#c62828">
@@ -500,7 +503,7 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
           <tr v-for="(s, si) in r.streams" :key="si">
             <td>{{s.opp_abbr}}<small v-if="s.spec" style="color:#667"> ({{s.spec}})</small> · {{s.entry_year}}<br><small v-if="s.special.length" style="color:#667">{{s.special.join(', ')}}</small>
               <div v-if="!s.version_id" style="font-size:12px;color:#c62828">{{s.reason}}<br>
-                <select v-model="s.version_id" @change="$nextTick(() => rematch(r, s))">
+                <select v-if="isAdmin" v-model="s.version_id" @change="$nextTick(() => rematch(r, s))">
                   <option :value="null">— обрати версію вручну —</option>
                   <option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions', v)}}</option>
                 </select>
@@ -547,7 +550,7 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
         <label class="chk"><input type="checkbox" v-model="loadSharedKey"> Об'єднувати однакові назви</label>
       </p>
       <p>
-        <button class="p" @click="impLoadApply">Застосувати навантаження</button>
+        <button class="p" @click="impLoadApply" :disabled="!isAdmin && (!teacherCheck || teacherCheck.level === 'none')">Застосувати навантаження</button>
         <button class="s" @click="impLoad=null">Скасувати</button>
       </p>
     </template>
@@ -1796,7 +1799,7 @@ if(!c.SigFlags.fac)m.push('Підписи декана й голови мето�
 if(!c.SigFlags.dep)m.push('Підписи завідувача кафедри й гаранта за '+y+' рік не дозволені адміністратором — місця під них лишаться порожніми');
 if(!c.GeneralCompetencies.length&&!c.SpecialCompetencies.length)m.push('Не обрано компетенції (вкладка «Компетенції»)');
 return m.concat(this.calc.warns)},
-visibleTabs(){return this.isAdmin?this.tabs:[['disciplines','Мої дисципліни'],['assign','Компетенції'],['doc','Документ'],['sig','Мій підпис']]},
+visibleTabs(){return this.isAdmin?this.tabs:[['disciplines','Мої дисципліни'],['import','Імпорт навантаження'],['assign','Компетенції'],['doc','Документ'],['sig','Мій підпис']]},
 statRows(){return(this.D.disciplines||[]).filter(d=>!this.sv||d.version_id===this.sv)
 .filter(d=>this.sy===''||this.studyYearOf(d)===this.sy||!this.studyYearOf(d)).map(d=>{
 const doc=this.docOf(d),ver=this.lab('program_versions',this.D.program_versions.find(v=>v.id===d.version_id));
@@ -1994,6 +1997,36 @@ versionState() {
 },
 
 // Що зміниться в програмі після імпорту ОПП
+// Чи це навантаження поточного викладача (за прізвищем та ініціалами)
+teacherCheck() {
+  if (!this.impLoad || !this.profile) return null;
+  const clean = x => String(x || '').replace(/\(.*?\)/g, ' ');
+  const tok = x => clean(x).split(/[\s.]+/).filter(Boolean);
+  const ft = tok(this.impLoad.teacherRaw);
+  if (!ft.length) return { level: 'none', msg: '⛔ У файлі не вказано викладача — імпорт неможливий.' };
+  const fSur = nameKey(ft[0]);
+  const fIni = ft.slice(1).map(w => nameKey(w[0] || ''));
+  const mine = [this.profile.full_name, this.profile.full_name_long].filter(Boolean);
+  const rank = { none: 0, soft: 1, ok: 2 };
+  let best = 'none', why = 'прізвище не збігається';
+  for (const c of mine) {
+    const ct = tok(c);
+    const si = ct.findIndex(w => nameKey(w) === fSur);
+    if (si < 0) continue;
+    const pIni = ct.filter((_, i) => i !== si).map(w => nameKey(w[0] || ''));
+    let lvl;
+    if (!fIni.length || !pIni.length) { lvl = 'soft'; why = 'не вдалося звірити ініціали'; }
+    else if (fIni[0] === pIni[0] && (fIni.length < 2 || pIni.length < 2 || fIni[1] === pIni[1])) lvl = 'ok';
+    else { lvl = 'none'; why = 'ініціали не збігаються'; }
+    if (rank[lvl] > rank[best]) best = lvl;
+  }
+  const mineName = this.profile.full_name || this.profile.full_name_long || this.profile.email;
+  const fileName = clean(this.impLoad.teacherRaw).trim();
+  if (best === 'ok') return { level: 'ok', msg: '✅ Це ваше навантаження: «' + fileName + '».' };
+  if (best === 'soft') return { level: 'soft', msg: '⚠ У файлі «' + fileName + '», у вашому профілі «' + mineName + '»: збігається прізвище, але ' + why + '. Переконайтесь, що це ваше навантаження.' };
+  return { level: 'none', msg: '⛔ У файлі навантаження викладача «' + fileName + '», а ваш профіль — «' + mineName + '» (' + why + '). Імпорт чужого навантаження заборонено.' };
+},
+
 // Версії ОП, яких бракує в БД для потоків з навантаження
 missingVersions() {
   if (!this.impLoad) return [];
@@ -2025,7 +2058,7 @@ oppDiff() {
 methods:{
 notify(t,k='ok'){this.toast={t,k};clearTimeout(this._t);this._t=setTimeout(()=>this.toast=null,k==='ok'?2500:6000)},
 err(e){const m=e.message||String(e);this.notify(m.includes('coerce')||m.includes('row-level')?'Немає прав на цю дію':'Помилка: '+m,'err')},
-go(t){this.tab=t;this.form=null;this.resetView()},
+go(t){this.tab=t;this.form=null;this.resetView();if(t==='import'&&!this.isAdmin){this.impStep='load';this.loadOnlyMatched=true}},
 prep(f){if(this.tab==='disciplines'){if(!f.id&&!f.department_id)f.department_id=this.profile.department_id||null;f.params=f.params||{};f.params.day=f.params.day||{};f.params.part=f.params.part||{};f.teachers=(this.D.discipline_teachers||[]).filter(x=>x.discipline_id===f.id).map(x=>x.user_id)}return f},
 edit(r){this.form=this.prep(JSON.parse(JSON.stringify(r)))},
 addNew(){this.form=this.prep({})},
@@ -2437,7 +2470,8 @@ async impLoadFile(ev) {
   if (!f) return;
   try {
     this.impLoad = await parseLoad(f, this.D);
-    if (!this.loadTeacher && this.impLoad.teacherRaw) {
+    { const y = +String(this.impLoad.studyYear || '').slice(0, 4); if (y && YEARS.includes(y)) this.loadYear = y; }
+    if (this.isAdmin && !this.loadTeacher && this.impLoad.teacherRaw) {
       const sur = this.impLoad.teacherRaw.split(/\s+/)[0].toLowerCase();
       const found = this.profs.find(p => (p.full_name || '').toLowerCase().includes(sur));
       if (found) this.loadTeacher = found.id;
@@ -2455,6 +2489,12 @@ loadMatch(row, stream) {
 
 async impLoadApply() {
   if (!this.impLoad) return;
+  const teacherId = this.isAdmin ? this.loadTeacher : this.session.user.id;
+  if (!this.isAdmin) {
+    const tc = this.teacherCheck;
+    if (!tc || tc.level === 'none') return this.notify(tc ? tc.msg : 'Не вдалося перевірити викладача', 'err');
+    if (tc.level === 'soft' && !confirm(tc.msg + '\n\nПродовжити імпорт?')) return;
+  }
   const rows = this.impLoad.rows.filter(r => {
     if (this.loadSkipNonDisc && (r.isPractice || r.isQualification)) return false;
     if (this.loadOnlyMatched && !r.streams.some(s => this.loadMatch(r, s))) return false;
@@ -2471,10 +2511,13 @@ async impLoadApply() {
       (nDiff ? `\n\n⚠ У ${nDiff} потоках години в навантаженні не збігаються з планом — буде записано години ПЛАНУ.` : '') +
       (nOff ? `\n⚠ У ${nOff} потоках у плані немає годин у цьому семестрі — взято години з навантаження.` : ''))) return;
 
+  const fails = [], skipped = [];
+  let created = 0, updated = 0;
   try {
     for (const r of rows) {
       for (const s of r.streams) {
         if (!okS(s)) continue;
+        try {
         const match = this.loadMatch(r, s);
         const sharedKey = this.loadSharedKey
           ? r.name.toLowerCase().replace(/[^а-яіїєґa-z0-9]/g, '').slice(0, 40)
@@ -2518,22 +2561,42 @@ async impLoadApply() {
           if (s.diff) payload.params.load_file_hours = { ...s.hours };
           else delete payload.params.load_file_hours;
         }
+        // Викладач не змінює дисципліни, до яких не прив'язаний
+        if (!this.isAdmin && existing &&
+            !(this.D.discipline_teachers || []).some(x => x.discipline_id === existing.id && x.user_id === teacherId)) {
+          skipped.push(payload.name + ' (' + s.semester + ' сем.)');
+          continue;
+        }
+        if (!this.isAdmin && !existing) payload.created_by = this.session.user.id;
+
         const { data, error } = existing
           ? await sb.from('disciplines').update(payload).eq('id', existing.id).select('id').single()
           : await sb.from('disciplines').insert(payload).select('id').single();
         if (error) throw error;
+        existing ? updated++ : created++;
 
-        if (this.loadTeacher) {
-          const { error: te } = await sb.from('discipline_teachers')
-            .upsert({ discipline_id: data.id, user_id: this.loadTeacher },
-                    { onConflict: 'discipline_id,user_id' });
-          if (te) console.warn('teacher', te);
+        if (teacherId) {
+          // Для викладача автора додає в discipline_teachers тригер БД (disciplines_creator_teacher)
+          if (this.isAdmin) {
+            const { error: te } = await sb.from('discipline_teachers')
+              .upsert({ discipline_id: data.id, user_id: teacherId }, { onConflict: 'discipline_id,user_id' });
+            if (te) console.warn('teacher', te);
+          }
         }
+        } catch (e) { fails.push({ name: r.name, e }); }
       }
     }
-    this.notify('Навантаження застосовано');
     await this.loadAll();
-    this.impLoad = null;
+    const parts = [`створено ${created}`, `оновлено ${updated}`];
+    if (skipped.length) parts.push(`пропущено ${skipped.length} (чужі дисципліни: ${skipped.slice(0, 3).join('; ')}${skipped.length > 3 ? '…' : ''})`);
+    if (fails.length) {
+      this.notify(`Навантаження: ${parts.join(', ')}; помилок ${fails.length}`, 'warn');
+      this.err(fails[0].e);
+      if (created + updated) this.impLoad = null;
+    } else {
+      this.notify('Навантаження застосовано: ' + parts.join(', '), skipped.length ? 'warn' : 'ok');
+      this.impLoad = null;
+    }
   } catch (e) { this.err(e); }
 },
 
