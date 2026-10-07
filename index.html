@@ -464,6 +464,11 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
         {{missingVersions.map(m => m.abbr + ' ' + m.year).join(', ')}}
       </div>
     </li>
+    <li v-if="impLoad.rows.some(r => r.streams.some(s => s.diff || s.offSem))" style="color:#c62828">
+      Розбіжності годин з планом: <b>{{impLoad.rows.reduce((a, r) => a + r.streams.filter(s => s.diff).length, 0)}}</b> потоків
+      <span v-if="impLoad.rows.some(r => r.streams.some(s => s.offSem))"> · семестр відсутній у плані: <b>{{impLoad.rows.reduce((a, r) => a + r.streams.filter(s => s.offSem).length, 0)}}</b></span>
+      <div style="font-size:12px;color:#667">Пріоритет — години плану; значення з файлу показано закресленим.</div>
+    </li>
     <li>Часткові збіги назв (перевірте): <b>{{impLoad.rows.flatMap(r => r.streams).filter(s => s.match && s.match.item && s.match.kind !== 'exact').length}}</b></li>
     <li>Унікальних ОП: <b>{{new Set(impLoad.rows.flatMap(r => r.streams.map(s => s.version_id)).filter(Boolean)).size}}</b></li>
     <li>
@@ -504,10 +509,22 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
             <td>{{s.semester}}</td>
             <td>{{s.groups.join(' + ')}}</td>
             <td>{{s.students_count}}</td>
-            <td>{{s.hours.lectures}}</td>
-            <td>{{s.hours.practicals}}</td>
-            <td>{{s.hours.labs}}</td>
-            <td>{{s.hours.consultations}}</td>
+            <td :style="s.diff && s.diff.lectures ? 'background:#fdecea' : ''">
+              <template v-if="s.diff && s.diff.lectures"><b>{{s.planHours.lectures}}</b><br><small style="color:#c62828;text-decoration:line-through" title="У файлі навантаження">{{s.hours.lectures}}</small></template>
+              <template v-else>{{s.planHours ? s.planHours.lectures : s.hours.lectures}}</template>
+            </td>
+            <td :style="s.diff && s.diff.practicals ? 'background:#fdecea' : ''">
+              <template v-if="s.diff && s.diff.practicals"><b>{{s.planHours.practicals}}</b><br><small style="color:#c62828;text-decoration:line-through" title="У файлі навантаження">{{s.hours.practicals}}</small></template>
+              <template v-else>{{s.planHours ? s.planHours.practicals : s.hours.practicals}}</template>
+            </td>
+            <td :style="s.diff && s.diff.labs ? 'background:#fdecea' : ''">
+              <template v-if="s.diff && s.diff.labs"><b>{{s.planHours.labs}}</b><br><small style="color:#c62828;text-decoration:line-through" title="У файлі навантаження">{{s.hours.labs}}</small></template>
+              <template v-else>{{s.planHours ? s.planHours.labs : s.hours.labs}}</template>
+            </td>
+            <td :style="s.diff && s.diff.consultations ? 'background:#fdecea' : ''">
+              <template v-if="s.diff && s.diff.consultations"><b>{{s.planHours.consultations}}</b><br><small style="color:#c62828;text-decoration:line-through" title="У файлі навантаження">{{s.hours.consultations}}</small></template>
+              <template v-else>{{s.planHours ? s.planHours.consultations : s.hours.consultations}}</template>
+            </td>
             <td>
               <span v-if="s.match && s.match.item && s.match.kind === 'exact'">✅ {{s.match.item.code || s.match.item.name_uk}}</span>
               <span v-else-if="s.match && s.match.item" style="color:#b26a00">
@@ -517,6 +534,8 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
               <span v-else-if="s.match && s.match.kind === 'ambiguous'" style="color:#c62828">⚠ неоднозначно: {{s.match.candidates.join(' | ')}}</span>
               <span v-else-if="s.match && s.match.kind === 'noplan'" style="color:#b26a00">— плану ОП немає</span>
               <span v-else style="color:#b26a00">⚠ не знайдено</span>
+              <div v-if="s.diff" style="font-size:12px;color:#c62828">⚠ години в навантаженні ≠ плану (взято з плану)</div>
+              <div v-if="s.offSem" style="font-size:12px;color:#c62828">⚠ у плані немає годин у {{s.semester}} семестрі</div>
             </td>
           </tr>
         </table>
@@ -1215,6 +1234,9 @@ function parseCurriculumCoded(sheets) {
       hours_practicals: num(get(r, C.prac)),
       hours_labs: num(get(r, C.lab)),
       hours_consultations: num(get(r, C.cons)),
+      hours_by_semester: semester ? { [semester]: {
+        lectures: num(get(r, C.lec)), practicals: num(get(r, C.prac)),
+        labs: num(get(r, C.lab)), consultations: num(get(r, C.cons)) } } : {},
       sort: items.length
     });
   }
@@ -1297,10 +1319,14 @@ function parseCurriculumNumbered(sheets) {
 
     // Години по семестрах
     const sems = [];
+    const hbs = {};
     const hs = { lec: 0, prac: 0, lab: 0, cons: 0 };
     blocks.forEach(b => {
       const v = [0, 1, 2, 3].map(k => num(r[b.c + k]));
-      if (v[0] + v[1] + v[2] + v[3] > 0) sems.push(b.v);
+      if (v[0] + v[1] + v[2] + v[3] > 0) {
+        sems.push(b.v);
+        hbs[b.v] = { lectures: v[0], practicals: v[1], labs: v[2], consultations: v[3] };
+      }
       hs.lec += v[0]; hs.prac += v[1]; hs.lab += v[2]; hs.cons += v[3];
     });
     const tot = { lec: num(r[C.lec]), prac: num(r[C.prac]), lab: num(r[C.lab]), cons: num(r[C.cons]) };
@@ -1333,6 +1359,7 @@ function parseCurriculumNumbered(sheets) {
       hours_practicals: H.prac,
       hours_labs: H.lab,
       hours_consultations: H.cons,
+      hours_by_semester: hbs,
       matched: null,
       sort: items.length
     });
@@ -1472,6 +1499,41 @@ function disciplineType(item) {
   return null;
 }
 
+// ---------- Години з плану (пріоритет) і розбіжності з навантаженням ----------
+const HKEYS = ['lectures', 'practicals', 'labs', 'consultations'];
+function planHoursFor(item, semester) {
+  if (!item) return null;
+  let h = item.hours_by_semester;
+  if (typeof h === 'string') { try { h = JSON.parse(h); } catch (e) { h = null; } }
+  if (h && typeof h === 'object' && Object.keys(h).length) {
+    const x = h[semester];
+    if (!x) return { offSem: true };
+    return { lectures: +x.lectures || 0, practicals: +x.practicals || 0, labs: +x.labs || 0, consultations: +x.consultations || 0 };
+  }
+  // запасний варіант: підсумкові години, якщо позиція плану в одному семестрі
+  const single = !(Array.isArray(item.semesters) && item.semesters.length > 1);
+  if (single && item.semester === semester &&
+      ['hours_lectures', 'hours_practicals', 'hours_labs', 'hours_consultations'].some(k => item[k] != null)) {
+    return { lectures: +item.hours_lectures || 0, practicals: +item.hours_practicals || 0,
+             labs: +item.hours_labs || 0, consultations: +item.hours_consultations || 0 };
+  }
+  return null;
+}
+function attachPlanHours(s) {
+  const item = s.match && s.match.item;
+  const ph = item ? planHoursFor(item, s.semester) : null;
+  s.offSem = !!(ph && ph.offSem);
+  s.planHours = ph && !ph.offSem ? ph : null;
+  const fileH = s.hours || {};
+  const d = {};
+  if (s.planHours) HKEYS.forEach(k => { if (Math.abs((+fileH[k] || 0) - s.planHours[k]) > 0.01) d[k] = true; });
+  s.diff = Object.keys(d).length ? d : null;
+}
+// Години, які підуть у дисципліну: з плану, якщо вони є
+function effectiveHours(s) {
+  return s.planHours ? { ...s.planHours } : { ...s.hours };
+}
+
 // ---------- Парсер навантаження викладача (xls/xlsx) ----------
 async function parseLoad(file, D) {
   const sheets = await readSheets(file);
@@ -1556,7 +1618,7 @@ async function parseLoad(file, D) {
     }
     const streams = [...buckets.values()];
     if (streams.length === 1) streams[0].students_count = Number(x.students) || null;
-    streams.forEach(st => { st.match = matchPlanItem(x.name, st, D); });
+    streams.forEach(st => { st.match = matchPlanItem(x.name, st, D); attachPlanHours(st); });
     rows.push({
       name: x.name,
       control: x.control,
@@ -2249,7 +2311,7 @@ async impOPPFile(ev) {
   }
 },
 
-rematch(r, s) { s.match = matchPlanItem(r.name, s, this.D); },
+rematch(r, s) { s.match = matchPlanItem(r.name, s, this.D); attachPlanHours(s); },
 
 async createMissingVersions() {
   const miss = this.missingVersions;
@@ -2267,6 +2329,7 @@ async createMissingVersions() {
         if (v) { s.version_id = v.id; s.reason = ''; }
       }
       s.match = matchPlanItem(r.name, s, this.D);
+      attachPlanHours(s);
     }
     this.notify('Створено версій ОП: ' + miss.length + '. Тепер імпортуйте для них навчальні плани (крок 2).');
   } catch (e) { this.err(e); }
@@ -2323,6 +2386,32 @@ async impPlanOPPFile(ev) {
   } catch (e) { this.notify('Не вдалося прочитати ОПП: ' + (e.message || e), 'err'); }
 },
 
+// Години плану по семестрах → curriculum_items.hours_by_semester (jsonb)
+async savePlanHours(items) {
+  try {
+    const cur = (this.D.curricula || []).find(c => c.version_id === this.planVid);
+    if (!cur || !items.some(i => i.hours_by_semester && Object.keys(i.hours_by_semester).length)) return true;
+    const db = (this.D.curriculum_items || []).filter(i => i.curriculum_id === cur.id);
+    const used = new Set(), jobs = [];
+    for (const it of items) {
+      const d = db.find(x => !used.has(x.id) && (it.code
+        ? x.code === it.code
+        : !x.code && nameKey(x.name_uk) === nameKey(it.name_uk)));
+      if (!d) continue;
+      used.add(d.id);
+      jobs.push({ id: d.id, hours_by_semester: it.hours_by_semester });
+    }
+    for (let i = 0; i < jobs.length; i += 10) {
+      const res = await Promise.all(jobs.slice(i, i + 10).map(j =>
+        sb.from('curriculum_items').update({ hours_by_semester: j.hours_by_semester }).eq('id', j.id).select('id')));
+      const bad = res.find(r => r.error);
+      if (bad) throw bad.error;
+    }
+    await this.loadAll();
+    return true;
+  } catch (e) { console.warn('savePlanHours', e); return false; }
+},
+
 async impPlanApply() {
   if (!this.planVid || !this.impPlan) return;
   if (!confirm(`Записати ${this.impPlan.items.length} дисциплін у план? Існуючий план буде замінено.`)) return;
@@ -2334,8 +2423,10 @@ async impPlanApply() {
       p_items: this.impPlan.items
     });
     if (error) throw error;
-    this.notify('План застосовано');
+    const planItems = this.impPlan.items;
     await this.loadAll();
+    const hres = await this.savePlanHours(planItems);
+    this.notify('План застосовано' + (hres ? '' : ' (години по семестрах не збережено — див. SQL)'), hres ? 'ok' : 'warn');
     this.impPlan = null;
   } catch (e) { this.err(e); }
 },
@@ -2374,7 +2465,11 @@ async impLoadApply() {
   const okS = s => s.version_id && s.semester;
   const nStreams = rows.reduce((a, r) => a + r.streams.filter(okS).length, 0);
   if (!nStreams) return this.notify('Жоден потік не прив’язано до версії ОП (перевірте групи/рік вступу)', 'err');
-  if (!confirm(`Створити/оновити ${nStreams} потоків для ${rows.length} дисциплін?`)) return;
+  const nDiff = rows.reduce((a, r) => a + r.streams.filter(s => okS(s) && s.diff).length, 0);
+  const nOff = rows.reduce((a, r) => a + r.streams.filter(s => okS(s) && s.offSem).length, 0);
+  if (!confirm(`Створити/оновити ${nStreams} потоків для ${rows.length} дисциплін?` +
+      (nDiff ? `\n\n⚠ У ${nDiff} потоках години в навантаженні не збігаються з планом — буде записано години ПЛАНУ.` : '') +
+      (nOff ? `\n⚠ У ${nOff} потоках у плані немає годин у цьому семестрі — взято години з навантаження.` : ''))) return;
 
   try {
     for (const r of rows) {
@@ -2385,6 +2480,11 @@ async impLoadApply() {
           ? r.name.toLowerCase().replace(/[^а-яіїєґa-z0-9]/g, '').slice(0, 40)
           : null;
 
+        const eff = effectiveHours(s);
+        const dayNew = {
+          year: s.course, semester: s.semester,
+          lectures: eff.lectures, practicals: eff.practicals, labs: eff.labs, consultations: eff.consultations
+        };
         const payload = {
           version_id: s.version_id,
           curriculum_item_id: match?.id || null,
@@ -2400,18 +2500,9 @@ async impLoadApply() {
           groups: s.groups,
           students_count: s.students_count,
           shared_key: sharedKey,
-          params: {
-            day: {
-              year: s.course,
-              semester: s.semester,
-              lectures: s.hours.lectures,
-              practicals: s.hours.practicals,
-              labs: s.hours.labs,
-              consultations: s.hours.consultations
-            },
-            part: {}
-          }
+          params: { day: dayNew, part: {} }
         };
+        if (s.diff) payload.params.load_file_hours = { ...s.hours };
 
         const existing = (this.D.disciplines || []).find(d =>
           d.version_id === s.version_id &&
@@ -2420,6 +2511,13 @@ async impLoadApply() {
           d.name === payload.name
         );
 
+        if (existing) {
+          // не затираємо інші параметри дисципліни (part, модулі…)
+          const ep = existing.params || {};
+          payload.params = { ...ep, day: { ...(ep.day || {}), ...dayNew }, part: ep.part || {} };
+          if (s.diff) payload.params.load_file_hours = { ...s.hours };
+          else delete payload.params.load_file_hours;
+        }
         const { data, error } = existing
           ? await sb.from('disciplines').update(payload).eq('id', existing.id).select('id').single()
           : await sb.from('disciplines').insert(payload).select('id').single();
