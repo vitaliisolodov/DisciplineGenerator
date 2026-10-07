@@ -45,6 +45,10 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
 .vt{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;margin:4px auto;font-weight:600}
 .vt.nodisc{color:#8a6d00;font-style:italic}
 .mx .xdel{border:0;background:none;color:#a33;cursor:pointer;padding:0 0 3px;font-size:11px}
+tr.eg td{border-top:2px solid #8a96ad}
+.pcard{border:1px solid #cdd3df;border-radius:6px;padding:8px 12px;margin:10px 0;background:#fafbfd}
+.prow{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}.prow label{margin:0!important}.prow input{max-width:110px!important}
+.pe{color:#c62828;margin:2px 0}.pw{color:#b26a00;margin:2px 0}
 </style>
 </head>
 <body>
@@ -77,7 +81,62 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
 <main>
 
 <!-- Універсальні таблиці довідників -->
-<section v-if="T[tab]">
+<div v-if="perMissing&&isAdmin" class="card" style="background:#fff3cd">⚠ У базі ще немає таблиць періодів (faculty_periods, department_periods, program_periods). Виконайте файл periods_migration.sql у Supabase → SQL Editor і оновіть сторінку. Поки що діють старі дані без періодів.</div>
+
+<!-- Редактор періодів (факультет / кафедра / гарант ОП) -->
+<div v-if="pf" id="pf" class="card form">
+<h3 style="margin-top:0">{{pf.title}}</h3>
+<small>Рік береться з року РПНД. «З року» порожнє — діє з початку (наприклад «до 2024»). «По рік» порожнє — діє й досі. Один рік: однакове значення в обох полях.</small>
+<div v-for="(p,i) in pf.list" :key="p._k" class="pcard">
+<div class="prow">
+<label>З року<input type="number" v-model.number="p.year_from" placeholder="—"></label>
+<label>По рік<input type="number" v-model.number="p.year_to" placeholder="—"></label>
+<span style="color:#667;padding-bottom:6px">{{perText(p)}}</span>
+<button class="s" style="margin-bottom:4px" @click="pfRemove(i)">✕ прибрати період</button>
+</div>
+<label v-for="f in PER[pf.tab].f" :key="f.k">{{f.l}}
+<select v-if="f.ref" v-model="p[f.k]"><option :value="null">—</option><option v-for="o in opts(f)" :key="o.id" :value="o.id">{{o.l}}</option></select>
+<input v-else v-model="p[f.k]">
+<small v-if="phint(f)">{{phint(f)}}</small>
+</label>
+<div v-if="pf.tab==='programs'" style="margin:8px 0">
+<label class="chk" v-for="r in ROLES" :key="r[0]"><input type="radio" :name="'role'+p._k" :value="r[0]" v-model="p.guarantor_role" style="display:inline;width:auto"> {{r[1]}}</label>
+</div>
+<template v-if="p.id">
+<div v-for="sg in PER[pf.tab].sigs" :key="sg[0]" style="margin:6px 0">
+<b>{{sg[1]}}:</b> {{sigs[sg[0]+'/'+p.id+'.png']?'✔ завантажено':(sigs[sg[0]+'/'+pf.entityId+'.png']?'✔ старий підпис установи (діє, поки немає свого)':'— немає')}}
+<input type="file" accept="image/*" @change="uploadSig(sg[0],p.id,$event)" style="display:inline;width:auto">
+<template v-if="sigs[sg[0]+'/'+p.id+'.png']"><button class="s" @click="showSig(sg[0],p.id)">Показати</button> <button class="s" @click="delSig(sg[0],p.id)">Видалити</button></template>
+<div v-if="sigUrl[sg[0]+'/'+p.id+'.png']"><img :src="sigUrl[sg[0]+'/'+p.id+'.png']" class="sigprev"></div>
+</div>
+</template>
+<small v-else>Підпис для цього періоду можна завантажити після збереження.</small>
+</div>
+<div v-for="e in pfIssues.err" :key="'e'+e" class="pe">⛔ {{e}}</div>
+<div v-for="w in pfIssues.warn" :key="'w'+w" class="pw">⚠ {{w}}</div>
+<p><button class="s" @click="pfAdd">+ Додати період</button></p>
+<button class="p" :disabled="pfIssues.err.length>0" @click="pfSave">Зберегти</button>
+<button class="s" @click="pf=null">Скасувати</button>
+</div>
+
+<!-- Факультети й кафедри: один рядок = один період -->
+<section v-if="FLAT[tab]">
+<h3>{{T[tab].label}}</h3>
+<small>Кожен рядок — період, у який діють ці дані. «Усі роки» — без обмеження. У документ підставляється запис, чинний у році РПНД.</small>
+<p><button class="p" @click="pfOpen(tab,null)">+ Додати {{PER[tab].one}}</button></p>
+<div class="tb"><input v-model="q" type="search" placeholder="🔍 Пошук…"><span style="color:#667;font-size:13px">Рядків: {{flatRows.length}}</span></div>
+<table>
+<tr><th>Період</th><th v-for="f in PER[tab].f" :key="f.k">{{f.l}}</th><th></th></tr>
+<tr v-for="r in flatRows" :key="r.p.id" :class="{eg:r.first}">
+<td style="white-space:nowrap"><span :style="{color:inPerNow(r.p)?'#2e7d32':'#556'}">{{perText(r.p)}}</span><small v-if="inPerNow(r.p)" style="color:#2e7d32">діє зараз</small></td>
+<td v-for="f in PER[tab].f" :key="f.k">{{showP(r.p,f)}}</td>
+<td style="white-space:nowrap"><button class="s" title="Змінити періоди" @click="pfOpen(tab,r.e.id)">✎</button>
+<button class="s" v-if="r.first&&isAdmin" title="Видалити з усіма періодами" @click="del(r.e)">✕</button></td></tr>
+</table>
+</section>
+
+<!-- Універсальні таблиці довідників -->
+<section v-else-if="T[tab]">
 <h3>{{T[tab].label}}</h3>
 <p v-if="!T[tab].noAdd"><button class="p" @click="addNew()">+ Додати</button></p>
 <div class="tb">
@@ -86,12 +145,17 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
 <button class="s" v-if="q||sk||Object.values(cf).some(Boolean)" @click="resetView">Скинути фільтри</button>
 </div>
 <table>
-<tr><th v-for="f in T[tab].f" :key="f.k" class="sortable" :title="(hint(f)?hint(f)+' — ':'')+'натисніть, щоб сортувати'" @click="sortBy(f)">{{f.l}} <span style="color:#889">{{sk===f.k?(sd>0?'▲':'▼'):'⇅'}}</span></th><th v-if="tab==='disciplines'" class="sortable" @click="sortBy({k:'__teacher'})">Викладачі <span style="color:#889">{{sk==='__teacher'?(sd>0?'▲':'▼'):'⇅'}}</span></th><th></th></tr>
+<tr><th v-for="f in T[tab].f" :key="f.k" class="sortable" :title="(hint(f)?hint(f)+' — ':'')+'натисніть, щоб сортувати'" @click="sortBy(f)">{{f.l}} <span style="color:#889">{{sk===f.k?(sd>0?'▲':'▼'):'⇅'}}</span></th><th v-if="tab==='programs'">Гарант / керівник ОП</th><th v-if="tab==='disciplines'" class="sortable" @click="sortBy({k:'__teacher'})">Викладачі <span style="color:#889">{{sk==='__teacher'?(sd>0?'▲':'▼'):'⇅'}}</span></th><th></th></tr>
 <tr class="flt" v-if="T[tab].f.some(f=>f.ref||f.opts)||tab==='disciplines'"><td v-for="f in T[tab].f" :key="f.k">
-<select v-if="f.ref||f.opts" v-model="cf[f.k]"><option :value="undefined">Усі</option><option v-for="o in opts(f)" :key="o.id" :value="o.id">{{o.l}}</option></select></td><td v-if="tab==='disciplines'">
+<select v-if="f.ref||f.opts" v-model="cf[f.k]"><option :value="undefined">Усі</option><option v-for="o in opts(f)" :key="o.id" :value="o.id">{{o.l}}</option></select></td><td v-if="tab==='programs'"></td><td v-if="tab==='disciplines'">
 <select v-model="cf.__teacher"><option :value="undefined">Усі викладачі</option><option v-for="p in teacherOpts" :key="p.id" :value="p.id">{{lab('profiles',p)}}</option></select></td><td></td></tr>
 <tr v-for="r in viewRows" :key="r.id">
   <td v-for="f in T[tab].f" :key="f.k">{{show(r,f)}}</td>
+  <td v-if="tab==='programs'" style="min-width:210px">
+    <div v-for="g in perList('programs',r.id)" :key="g.id">{{g.guarantor||'—'}}<small>{{perText(g)}}</small></div>
+    <div v-if="!perList('programs',r.id).length"><span v-if="r.guarantor">{{r.guarantor}}<small>усі роки</small></span><span v-else style="color:#b26a00">не вказано</span></div>
+    <button class="s" @click="pfOpen('programs',r.id)">✎ за роками</button>
+  </td>
   <td v-if="tab==='disciplines'"><span v-if="teachersOf(r)">{{teachersOf(r)}}</span><span v-else style="color:#c62828">не призначено</span></td>
 
   <!-- Стан ОП: показуємо для версій ОП і програм -->
@@ -750,16 +814,16 @@ tr.flt td{padding:2px 4px;background:#f7f8fa}tr.flt select{width:100%;max-width:
 <!-- Затвердження -->
 <section v-else-if="tab==='approvals'">
 <h3>Дати й протоколи затвердження</h3>
-<small>Спільні для всіх РПНД факультету й кафедри за обраний рік. Рік також підставляється в рядок «Харків – РРРР р.».</small>
+<small>Показано факультети й кафедри, що діють у вибраному році (за періодами), з назвами за цей рік. Спільні для всіх РПНД факультету й кафедри за обраний рік. Рік також підставляється в рядок «Харків – РРРР р.».</small>
 <p>Рік: <select v-model.number="ay"><option v-for="y in YEARS" :key="y" :value="y">{{y}}</option></select>
 <button class="s" @click="copyPrev">Скопіювати з {{ay-1}} року</button></p>
 <h3>Факультети</h3>
 <table><tr><th>Факультет</th><th v-for="c in APF" :key="c[0]">{{c[1]}}</th></tr>
-<tr v-for="f in D.faculties" :key="f.id"><td>{{f.name}}</td>
+<tr v-for="f in actEnts('faculties')" :key="f.id"><td>{{entAt('faculties',f.id,ay).name}}</td>
 <td v-for="c in APF" :key="c[0]"><input v-if="c[2]==='checkbox'" type="checkbox" :checked="!!ap('faculty_approvals','faculty_id',f.id)[c[0]]" @change="setAp('faculty_approvals','faculty_id',f.id,c[0],$event.target.checked)"><input v-else :type="c[2]" :value="ap('faculty_approvals','faculty_id',f.id)[c[0]]" @change="setAp('faculty_approvals','faculty_id',f.id,c[0],$event.target.value)"></td></tr></table>
 <h3>Кафедри</h3>
 <table><tr><th>Кафедра</th><th v-for="c in APD" :key="c[0]">{{c[1]}}</th></tr>
-<tr v-for="d in D.departments" :key="d.id"><td>{{d.name}}</td>
+<tr v-for="d in actEnts('departments')" :key="d.id"><td>{{entAt('departments',d.id,ay).name}}</td>
 <td v-for="c in APD" :key="c[0]"><input v-if="c[2]==='checkbox'" type="checkbox" :checked="!!ap('department_approvals','department_id',d.id)[c[0]]" @change="setAp('department_approvals','department_id',d.id,c[0],$event.target.checked)"><input v-else :type="c[2]" :value="ap('department_approvals','department_id',d.id)[c[0]]" @change="setAp('department_approvals','department_id',d.id,c[0],$event.target.value)"></td></tr></table>
 </section>
 
@@ -866,12 +930,41 @@ const YEARS=(()=>{const y=new Date().getFullYear(),a=[];for(let i=y+1;i>=2015;i-
 const T = {
 faculties:{label:'Факультети',sigs:[['faculty-dean','Підпис декана'],['faculty-method','Підпис голови методичної комісії']],f:[{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'dean',l:'Декан'},{k:'method_head',l:'Голова методкомісії'}]},
 departments:{label:'Кафедри',sigs:[['department-head','Підпис завідувача кафедри']],f:[{k:'faculty_id',l:'Факультет',ref:'faculties'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'head',l:'Завідувач'}]},
-programs:{label:'Освітні програми',sigs:[['program-guarantor','Підпис гаранта ОП']],f:[{k:'department_id',l:'Кафедра',ref:'departments'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'specialty_code',l:'Код спеціальності'},{k:'specialty_name',l:'Спеціальність'},{k:'education_level',l:'Рівень',opts:LEVELS},{k:'guarantor',l:'Гарант'}]},
+programs:{label:'Освітні програми',f:[{k:'department_id',l:'Кафедра',ref:'departments'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'specialty_code',l:'Код спеціальності'},{k:'specialty_name',l:'Спеціальність'},{k:'education_level',l:'Рівень',opts:LEVELS}]},
 program_versions:{label:'Версії ОП (рік набору)',f:[{k:'program_id',l:'Програма',ref:'programs'},{k:'entry_year',l:'Рік набору',opts:YEARS}]},
 disciplines:{label:'Дисципліни',f:[{k:'version_id',l:'Версія ОП',ref:'program_versions'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'code',l:'Код'},{k:'name',l:'Назва'},{k:'type',l:'Тип'},{k:'ects',l:'Кредити ЄКТС',num:true},{k:'language',l:'Мова'},{k:'control_type',l:'Форма контролю'}]},
 profiles:{label:'Користувачі',noAdd:true,noDel:true,sigs:[['profile','Підпис викладача']],f:[{k:'email',l:'Email (для входу)',ro:true},{k:'full_name',l:'ПІБ'},{k:'full_name_long',l:'Повне ПІБ (для силабусу)'},{k:'position',l:'Посада'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'role',l:'Роль',opts:['teacher','admin']}]}
 };
 const TABLES=[...Object.keys(T),'competencies','discipline_competencies','discipline_teachers','documents','faculty_approvals','department_approvals','matrix_columns','matrix_cells','curricula','curriculum_items','study_year_permissions'];
+// ---------- Періоди чинності (факультети, кафедри, гаранти) ----------
+// Установа (факультет/кафедра/ОП) існує як один запис; усе, що змінюється з роками, лежить у таблицях періодів.
+// year_from / year_to: порожнє = без обмеження. Рік береться з року РПНД.
+const PTABLES=['faculty_periods','department_periods','program_periods'];
+const PER={
+ faculties:{pt:'faculty_periods',key:'faculty_id',f:[{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'dean',l:'Декан'},{k:'method_head',l:'Голова методкомісії'}],
+  sigs:[['faculty-dean','Підпис декана'],['faculty-method','Підпис голови методичної комісії']],one:'факультет'},
+ departments:{pt:'department_periods',key:'department_id',f:[{k:'faculty_id',l:'Факультет',ref:'faculties'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'head',l:'Завідувач'}],
+  sigs:[['department-head','Підпис завідувача кафедри']],one:'кафедру'},
+ programs:{pt:'program_periods',key:'program_id',f:[{k:'guarantor',l:'Гарант / керівник (ПІБ)'}],
+  sigs:[['program-guarantor','Підпис гаранта ОП']],one:'освітню програму'}};
+const ROLES=[['guarantor','Гарант освітньої програми'],['leader','Керівник групи забезпечення спеціальності']];
+const nY=v=>(v===''||v==null||isNaN(Number(v)))?null:Math.trunc(Number(v));
+const blankV=v=>(v===''||v===undefined)?null:v;
+const inPer=(p,y)=>{const a=nY(p.year_from),b=nY(p.year_to);return(a==null||a<=y)&&(b==null||y<=b)};
+const perCmp=(a,b)=>((nY(a.year_from)==null?-1e9:nY(a.year_from))-(nY(b.year_from)==null?-1e9:nY(b.year_from)))||((nY(a.year_to)==null?1e9:nY(a.year_to))-(nY(b.year_to)==null?1e9:nY(b.year_to)));
+const perTxt=p=>{const a=nY(p.year_from),b=nY(p.year_to);return a==null&&b==null?'усі роки':a==null?'до '+b:b==null?'з '+a:a===b?String(a):a+'–'+b};
+function perIssues(list,tab){const err=[],warn=[],P=PER[tab];
+ list.forEach((p,i)=>{const n='Період '+(i+1)+' ('+perTxt(p)+'): ',a=nY(p.year_from),b=nY(p.year_to);
+  if(a!=null&&b!=null&&a>b)err.push(n+'«З року» більше за «По рік»');
+  if(tab==='programs'){if(!String(p.guarantor||'').trim())err.push(n+'вкажіть ПІБ')}
+  else if(!String(p.name||'').trim())err.push(n+'вкажіть назву');
+  if(tab==='departments'&&!p.faculty_id)warn.push(n+'не вибрано факультет')});
+ const lo=x=>nY(x.year_from)==null?-1e9:nY(x.year_from),hi=x=>nY(x.year_to)==null?1e9:nY(x.year_to);
+ const ok=list.filter(x=>lo(x)<=hi(x));
+ for(let i=0;i<ok.length;i++)for(let j=i+1;j<ok.length;j++)if(lo(ok[i])<=hi(ok[j])&&lo(ok[j])<=hi(ok[i]))err.push('Періоди «'+perTxt(ok[i])+'» і «'+perTxt(ok[j])+'» перетинаються');
+ const so=[...ok].sort((x,y)=>lo(x)-lo(y));
+ for(let k=0;k<so.length-1;k++){const e=hi(so[k]),b=lo(so[k+1]);if(e<1e9&&b>-1e9&&b-e>1)warn.push('Немає запису на '+(e+1)+(b-e>2?'–'+(b-1):'')+' р. — РПНД за ці роки матимуть порожні поля')}
+ return{err:[...new Set(err)],warn}}
 const KINDS={IntegralCompetency:'IK',GeneralCompetencies:'ZK',SpecialCompetencies:'FK',LearningCompetencies:'RN'};
 const KORD=['IK','ZK','FK','RN'];
 const NC=x=>(x||'').toLowerCase().replace(/\s+/g,'');          // код дисципліни: без пробілів і регістру
@@ -1652,7 +1745,7 @@ data(){return{
   TPLS:[['rpnd','РПНД'],['syllabus','Силабус']],
   sigs:{},sigUrl:{},xsrc:'',xclone:'',xopt:{doc:true,comps:true,params:false},
   XST:{exact:'✔ без змін',moved:'↔ змінився код',reworded:'✎ змінилось формулювання',missing:'✖ немає в цій версії — не буде перенесена'},
-  YEARS,APF,APD,ay:new Date().getFullYear(),
+  YEARS,APF,APD,PER,ROLES,FLAT:{faculties:true,departments:true},pf:null,perMissing:false,ay:new Date().getFullYear(),
   ready:false,session:null,profile:null,email:'',pw:'',tab:'faculties',toast:null,
   D:{},form:null,cv:'',ad:'',drag:null,sv:'',q:'',sk:'',sd:1,cf:{},
   stQ:'',stS:'ver',stD:1,stF:'',
@@ -1695,6 +1788,14 @@ this.dstate='Зберігається…';clearTimeout(this._dt);this._dt=setTim
 },
 computed:{
 isAdmin(){return !!this.profile&&this.profile.role==='admin'},
+pfIssues(){return this.pf?perIssues(this.pf.list,this.pf.tab):{err:[],warn:[]}},
+flatRows(){const tab=this.tab,P=PER[tab];if(!P||!this.FLAT[tab])return[];const q=this.q.trim().toLowerCase(),out=[];
+const key=e=>(tab==='departments'?this.lab('faculties',(this.D.faculties||[]).find(x=>x.id===e.faculty_id))+' ':'')+(e.abbr||e.name||'');
+const ents=[...(this.D[tab]||[])].sort((a,b)=>key(a).localeCompare(key(b),'uk'));
+for(const e of ents){let ps=this.perList(tab,e.id);
+ if(!ps.length){const b={id:'base-'+e.id,year_from:null,year_to:null};P.f.forEach(f=>b[f.k]=e[f.k]);ps=[b]}
+ ps.forEach((p,i)=>{if(!q||(this.perText(p)+' '+P.f.map(f=>this.showP(p,f)).join(' ')).toLowerCase().includes(q))out.push({e,p,first:i===0})})}
+return out},
 versions(){return[...(this.D.program_versions||[])].sort((a,b)=>this.lab('program_versions',a).localeCompare(this.lab('program_versions',b),'uk'))},
 profs(){return[...(this.D.profiles||[])].sort((a,b)=>this.lab('profiles',a).localeCompare(this.lab('profiles',b),'uk'))},
 teacherOpts(){const ids=[...new Set((this.D.discipline_teachers||[]).map(x=>x.user_id))];return this.profs.filter(p=>ids.includes(p.id))},
@@ -1737,12 +1838,14 @@ return{mods,sem,lists,warns}},
 // Повний набір даних для шаблону
 ctx(){const dd=this.dd,d=this.curDisc,c=this.calc;if(!dd||!d||!c)return null;
 const D=this.D,P=d.params||{},z=v=>v?v:'';
-const ver=D.program_versions.find(v=>v.id===d.version_id)||{},prog=D.programs.find(x=>x.id===ver.program_id)||{};
-const dep=D.departments.find(x=>x.id===d.department_id)||{},fac=D.faculties.find(x=>x.id===dep.faculty_id)||{};
+const Y=Number(dd.year)||new Date().getFullYear();
+const ver=D.program_versions.find(v=>v.id===d.version_id)||{},prog=this.entAt('programs',ver.program_id,Y);
+const dep=this.entAt('departments',d.department_id,Y),fac=this.entAt('faculties',dep.faculty_id,Y);
+const GT=prog.guarantor_role==='leader'?'Керівник групи забезпечення спеціальності':'Гарант освітньої програми'+(prog.abbr?' '+prog.abbr:'');
 const fa=D.faculty_approvals.find(x=>x.faculty_id===fac.id&&x.year===dd.year)||{};
 const da=D.department_approvals.find(x=>x.department_id===dep.id&&x.year===dd.year)||{};
 const Authors=D.discipline_teachers.filter(x=>x.discipline_id===d.id).map(x=>D.profiles.find(p=>p.id===x.user_id)).filter(p=>p&&p.full_name)
-.map(p=>{const ad=D.departments.find(x=>x.id===p.department_id)||dep;return[p.full_name,p.position].filter(Boolean).join(', ')+(ad.abbr?' каф. '+ad.abbr:'')}).join('; ');
+.map(p=>{const ad=this.adOf(p,dep,Y);return[p.full_name,p.position].filter(Boolean).join(', ')+(ad.abbr?' каф. '+ad.abbr:'')}).join('; ');
 const H={year:'YearOfEntry',semester:'Semester',total:'TotalHours',lectures:'Lectures',practicals:'Practicals',labs:'Labs',consultations:'Consultations',selfstudy:'SelfStudy',coursework:'Coursework'};
 const hrs={};for(const[k,t]of Object.entries(H)){hrs[t+'_DayForm']=z((P.day||{})[k]);hrs[t+'_PartTimeForm']=P.part_enabled?z((P.part||{})[k]):''}
 const R=s=>({total:z(s.total),l:z(s.l),p:z(s.p),lab:z(s.lab),cons:z(s.cons),sr:z(s.sr)});
@@ -1768,12 +1871,12 @@ if(q.lectures)parts.push('Лекції – '+q.lectures+' год');if(q.practica
 if(q.labs)parts.push('Лабораторні роботи – '+q.labs+' год');if(q.consultations)parts.push('Консультації – '+q.consultations+' год');
 if(d.control_type)parts.push('Семестровий контроль - '+d.control_type.charAt(0).toUpperCase()+d.control_type.slice(1)+'.');
 const AuthorsList=D.discipline_teachers.filter(x=>x.discipline_id===d.id).map(x=>D.profiles.find(p=>p.id===x.user_id)).filter(p=>p&&(p.full_name||p.full_name_long))
-.map(p=>{const ad=D.departments.find(x=>x.id===p.department_id)||dep;
+.map(p=>{const ad=this.adOf(p,dep,Y);
 return{line:[[p.position,ad.abbr?'кафедри '+ad.abbr:''].filter(Boolean).join(' '),p.full_name_long||p.full_name,p.email].filter(Boolean).join(', ')}});
 const o={Faculty:fac.name||'',AbbFaculty:fac.abbr||'',Dean:fac.dean||'',MethodHead:fac.method_head||'',
 Department:dep.name||'',AbbDep:dep.abbr||'',Head:dep.head||'',
 DisciplineName:d.name,EducationLevel:prog.education_level||'',SpecialtyCode:[prog.specialty_code,prog.specialty_name].filter(Boolean).join(' '),
-EducationalProgram:prog.name||'',AbbEduP:prog.abbr||'',Guarantor:prog.guarantor||'',Authors,
+EducationalProgram:prog.name||'',AbbEduP:prog.abbr||'',Guarantor:prog.guarantor||'',GuarantorTitle:GT,Authors,
 ECTS:z(d.ects),TypeOfDiscipline:d.type||'',LanguageDiscipline:d.language||'',ControlType:d.control_type||'',ModulesCount:z(dd.modules.filter(m=>!m.ind).length),
 DepSignatureYear:dd.year,FacSignatureLDate:dlong(fa.sign_date),FacSignatureDate:dshort(fa.protocol_date),FacApprovText:fa.protocol_no||'',
 DepApprovDate:dshort(da.protocol_date),DepApprovText:da.protocol_no||'',DepSignatureDate:dshort(da.sign_date),
@@ -1792,6 +1895,11 @@ for(const[k]of[...TXT1,...TXT2])if(!(k in o))o[k]=dd[k]||'';
 return o},
 // Що ще не заповнено / не збігається
 missing(){const c=this.ctx;if(!c)return[];const m=[],y=this.dd.year;
+{const D=this.D,d=this.curDisc,Y=Number(y)||new Date().getFullYear(),ver=D.program_versions.find(v=>v.id===d.version_id)||{};
+const dep=this.entAt('departments',d.department_id,Y),fac=this.entAt('faculties',dep.faculty_id,Y),prog=this.entAt('programs',ver.program_id,Y);
+if(dep._none)m.push('Кафедра: немає запису, чинного в '+Y+' р. (вкладка «Кафедри» → періоди)');
+if(fac._none)m.push('Факультет: немає запису, чинного в '+Y+' р. (вкладка «Факультети» → періоди)');
+if(prog._none)m.push('Гарант ОП: немає запису, чинного в '+Y+' р. (вкладка «Освітні програми» → гарант)')}
 [['Dean','Декан факультету'],['Head','Завідувач кафедри'],['Guarantor','Гарант ОП'],['MethodHead','Голова методкомісії'],['Authors','Автори (їх призначає адмін)'],
 ['Faculty','Кафедра дисципліни (поле «Кафедра» в дисципліні)'],['EducationLevel','Рівень освіти програми'],['SpecialtyCode','Спеціальність програми']]
 .forEach(([k,l])=>{if(!c[k])m.push(l+' — не заповнено')});
@@ -2063,7 +2171,58 @@ oppDiff() {
 methods:{
 notify(t,k='ok'){this.toast={t,k};clearTimeout(this._t);this._t=setTimeout(()=>this.toast=null,k==='ok'?2500:6000)},
 err(e){const m=e.message||String(e);this.notify(m.includes('coerce')||m.includes('row-level')?'Немає прав на цю дію':'Помилка: '+m,'err')},
-go(t){this.tab=t;this.form=null;this.resetView();if(t==='import'&&!this.isAdmin){this.impStep='load';this.loadOnlyMatched=true}},
+perText(p){return perTxt(p)},
+inPerNow(p){return !String(p.id).startsWith('base-')&&inPer(p,new Date().getFullYear())},
+anchorYear(p){const a=nY(p.year_from),b=nY(p.year_to);return a!=null?a:(b!=null?b:new Date().getFullYear())},
+phint(f){return HINTS[this.pf.tab+'.'+f.k]||''},
+perList(tab,id){const P=PER[tab];return(this.D[P.pt]||[]).filter(x=>x[P.key]===id).sort(perCmp)},
+// Запис установи, чинний у році y (поля періоду накладаються на основний запис). Немає періодів зовсім — діють основні дані.
+entAt(tab,id,y){const e=(this.D[tab]||[]).find(x=>x.id===id);if(!e)return{};const P=PER[tab];
+ const all=(this.D[P.pt]||[]).filter(p=>p[P.key]===id);if(!all.length)return e;
+ const m=all.filter(p=>inPer(p,y)).sort((a,b)=>perCmp(b,a));
+ if(!m.length){const o={...e,_none:true};P.f.forEach(f=>o[f.k]='');return o}
+ return{...e,...m[0],id:e.id,periodId:m[0].id}},
+adOf(p,dep,y){const a=p.department_id?this.entAt('departments',p.department_id,y):null;return a&&!a._none&&a.abbr?a:dep},
+actEnts(tab){return(this.D[tab]||[]).filter(e=>!this.entAt(tab,e.id,this.ay)._none)},
+showP(p,f){if(!f.ref)return p[f.k]==null?'':p[f.k];const id=p[f.k];if(!id)return'';
+ const e=this.entAt(f.ref,id,this.anchorYear(p));return(e.id&&!e._none)?(e.abbr||e.name||''):this.lab(f.ref,(this.D[f.ref]||[]).find(x=>x.id===id))},
+// Показові поля в пам'яті = період, чинний зараз (або останній) — щоб працювали списки вибору
+applyPeriods(){for(const tab of['faculties','departments']){const P=PER[tab],y=new Date().getFullYear();
+ for(const e of this.D[tab]||[]){const l=this.perList(tab,e.id),p=l.find(x=>inPer(x,y))||l[l.length-1];if(p)P.f.forEach(f=>e[f.k]=p[f.k])}}},
+pfBlank(tab){const o={year_from:null,year_to:null,_k:++this._pk};PER[tab].f.forEach(f=>o[f.k]=null);if(tab==='programs')o.guarantor_role='guarantor';return o},
+pfOpen(tab,id){this._pk=this._pk||0;const P=PER[tab],e=id?(this.D[tab]||[]).find(x=>x.id===id):null;
+ let list=id?this.perList(tab,id).map(p=>({...p,_k:++this._pk})):[];
+ if(id&&!list.length){const b=this.pfBlank(tab);P.f.forEach(f=>b[f.k]=e[f.k]??null);list=[b]}   // старий запис без періодів
+ if(!list.length)list=[this.pfBlank(tab)];
+ list.forEach(p=>{if(tab==='programs'&&!p.guarantor_role)p.guarantor_role='guarantor'});
+ const nm=e?(tab==='programs'?this.lab('programs',e):(e.abbr||e.name)):'';
+ this.form=null;this.pf={tab,entityId:id||null,list,title:id?(tab==='programs'?'Гарант / керівник: ':'Періоди: ')+nm:'Нова установа — '+P.one};
+ this.$nextTick(()=>{const el=document.getElementById('pf');if(el)el.scrollIntoView({behavior:'smooth',block:'start'})})},
+pfAdd(){const pf=this.pf,last=[...pf.list].sort(perCmp).pop(),n=this.pfBlank(pf.tab);
+ if(last){PER[pf.tab].f.forEach(f=>n[f.k]=last[f.k]);if(pf.tab==='programs')n.guarantor_role=last.guarantor_role||'guarantor';const t=nY(last.year_to);n.year_from=t==null?null:t+1}
+ pf.list.push(n)},
+pfRemove(i){if(this.pf.list.length<2)return this.notify('Має лишитися хоча б один період — щоб прибрати установу повністю, видаліть її в таблиці','warn');this.pf.list.splice(i,1)},
+async pfSave(){const pf=this.pf,P=PER[pf.tab],iss=this.pfIssues;
+ if(iss.err.length)return this.notify('Виправте помилки в періодах','err');
+ if(iss.warn.length&&!confirm('Увага:\n• '+iss.warn.join('\n• ')+'\n\nЗберегти все одно?'))return;
+ try{let eid=pf.entityId;const first=[...pf.list].sort(perCmp)[0];
+  if(!eid){const base={};P.f.forEach(f=>base[f.k]=blankV(first[f.k]));
+   const{data,error}=await sb.from(pf.tab).insert(base).select('id').single();if(error)throw error;eid=data.id}
+  const keep=new Set(pf.list.filter(p=>p.id).map(p=>p.id)),gone=this.perList(pf.tab,eid).filter(p=>!keep.has(p.id)).map(p=>p.id);
+  if(gone.length){const{error}=await sb.from(P.pt).delete().in('id',gone);if(error)throw error;
+   await sb.storage.from('signatures').remove(gone.flatMap(id=>P.sigs.map(s=>s[0]+'/'+id+'.png')))}
+  for(const p of pf.list){const row={[P.key]:eid,year_from:nY(p.year_from),year_to:nY(p.year_to)};
+   P.f.forEach(f=>row[f.k]=f.ref?(p[f.k]||null):(String(p[f.k]??'').trim()||null));
+   if(pf.tab==='programs')row.guarantor_role=p.guarantor_role||'guarantor';
+   const{error}=await(p.id?sb.from(P.pt).update(row).eq('id',p.id):sb.from(P.pt).insert(row));if(error)throw error}
+  this.D[P.pt]=await all(P.pt);
+  // основний запис підтримуємо в актуальному стані (чинний зараз період)
+  const l=this.perList(pf.tab,eid),y=new Date().getFullYear(),cur=l.find(x=>inPer(x,y))||l[l.length-1],upd={};
+  if(pf.tab==='programs')upd.guarantor=cur.guarantor;else P.f.forEach(f=>upd[f.k]=cur[f.k]);
+  const{error:ue}=await sb.from(pf.tab).update(upd).eq('id',eid);if(ue)throw ue;
+  this.D[pf.tab]=await all(pf.tab);this.applyPeriods();this.pf=null;this.notify('Збережено')}
+ catch(e){this.err(e)}},
+go(t){this.tab=t;this.form=null;this.pf=null;this.resetView();if(t==='import'&&!this.isAdmin){this.impStep='load';this.loadOnlyMatched=true}},
 prep(f){if(this.tab==='disciplines'){if(!f.id&&!f.department_id)f.department_id=this.profile.department_id||null;f.params=f.params||{};f.params.day=f.params.day||{};f.params.part=f.params.part||{};f.teachers=(this.D.discipline_teachers||[]).filter(x=>x.discipline_id===f.id).map(x=>x.user_id)}return f},
 edit(r){this.form=this.prep(JSON.parse(JSON.stringify(r)))},
 addNew(){this.form=this.prep({})},
@@ -2077,7 +2236,9 @@ if(data){this.tab=data.role==='admin'?'faculties':'disciplines';await this.loadA
 async login(){const{data,error}=await sb.auth.signInWithPassword({email:this.email,password:this.pw});
 if(error)return this.notify('Невірний email або пароль','err');await this.setSession(data.session)},
 async logout(){await sb.auth.signOut();await this.setSession(null)},
-async loadAll(){try{for(const t of TABLES)this.D[t]=await all(t)}catch(e){this.err(e)}},
+async loadAll(){try{for(const t of TABLES)this.D[t]=await all(t)}catch(e){this.err(e)}
+this.perMissing=false;for(const t of PTABLES){try{this.D[t]=await all(t)}catch(e){this.D[t]=[];this.perMissing=true}}
+this.applyPeriods()},
 lab(t,r){if(!r)return'';
 if(t==='program_versions')return this.lab('programs',this.D.programs.find(p=>p.id===r.program_id))+' · '+r.entry_year;
 if(t==='disciplines')return r.name;if(t==='profiles')return r.full_name||('⚠ без ПІБ: '+(r.email||r.id.slice(0,8)));
@@ -2184,16 +2345,18 @@ async delSig(f,id){if(!confirm('Видалити підпис?'))return;const pa
 if(error)return this.err(error);const a={...this.sigs},u={...this.sigUrl};delete a[path];delete u[path];this.sigs=a;this.sigUrl=u;this.notify('Підпис видалено')},
 // Завантаження підписів для документа: керівники — лише якщо адмін дозволив на цей рік; автори — власні підписи
 async sigImages(){const D=this.D,d=this.curDisc,y=this.dd.year;
-const dep=D.departments.find(x=>x.id===d.department_id)||{},fac=D.faculties.find(x=>x.id===dep.faculty_id)||{};
-const ver=D.program_versions.find(v=>v.id===d.version_id)||{},prog=D.programs.find(x=>x.id===ver.program_id)||{};
+const Y=Number(y)||new Date().getFullYear();
+const dep=this.entAt('departments',d.department_id,Y),fac=this.entAt('faculties',dep.faculty_id,Y);
+const ver=D.program_versions.find(v=>v.id===d.version_id)||{},prog=this.entAt('programs',ver.program_id,Y);
+const pp=(f,e)=>[e.periodId?f+'/'+e.periodId+'.png':null,f+'/'+e.id+'.png'].filter(Boolean);   // підпис періоду, а як його немає — старий підпис установи
 const fa=D.faculty_approvals.find(x=>x.faculty_id===fac.id&&x.year===y)||{},da=D.department_approvals.find(x=>x.department_id===dep.id&&x.year===y)||{};
 const want={};
-if(fa.signatures_enabled&&fac.id){want.DEAN=['faculty-dean/'+fac.id+'.png'];want.METHOD=['faculty-method/'+fac.id+'.png']}
-if(da.signatures_enabled&&dep.id){want.HEAD=['department-head/'+dep.id+'.png'];if(prog.id)want.GUARANTOR=['program-guarantor/'+prog.id+'.png']}
+if(fa.signatures_enabled&&fac.id&&!fac._none){want.DEAN=pp('faculty-dean',fac);want.METHOD=pp('faculty-method',fac)}
+if(da.signatures_enabled&&dep.id&&!dep._none){want.HEAD=pp('department-head',dep);if(prog.id&&!prog._none)want.GUARANTOR=pp('program-guarantor',prog)}
 want.AUTHOR=D.discipline_teachers.filter(x=>x.discipline_id===d.id).map(x=>D.profiles.find(p=>p.id===x.user_id)).filter(p=>p&&p.full_name).map(p=>'profile/'+p.id+'.png');
 const imgs={},noFile=[];
 for(const[role,paths]of Object.entries(want)){const parts=[];
-for(const pth of paths){const{data}=await sb.storage.from('signatures').download(pth);if(data)parts.push(data)}
+for(const pth of paths){const{data}=await sb.storage.from('signatures').download(pth);if(data){parts.push(data);if(role!=='AUTHOR')break}}
 if(!parts.length){noFile.push(role);continue}
 const blob=parts.length===1?parts[0]:await joinSignatures(parts),bytes=new Uint8Array(await blob.arrayBuffer());
 imgs[role]={bytes,...pngSize(bytes)}}
