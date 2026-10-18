@@ -474,6 +474,13 @@ tr.eg td{border-top:2px solid #8a96ad}
     </select>
     <button class="s" v-if="ev" @click="go('import');impStep='opp';uVid=ev;uBuild()">⬆ Імпортувати файли для цієї версії</button>
     <span v-if="ev" style="white-space:nowrap">· копія на рік <input type="number" v-model.number="clYear" :placeholder="(eMeta&&eMeta.entry_year?eMeta.entry_year+1:'')" style="width:80px"> <button class="s" @click="cloneVersion" :disabled="clBusy">⧉ Клонувати версію</button></span>
+    <span v-if="ev" style="white-space:nowrap">· <label><input type="checkbox" v-model="npRem"> видаляти рядки НП, яких немає в БД</label> <button class="s" @click="npDownload" :disabled="npBusy">⬇ НП (.xlsx)</button></span>
+  </div>
+
+  <div v-if="npRep" class="card form">
+    <b>Звіт оновлення НП</b> <small>— {{npRep.n}} змін; файл уже завантажено</small>
+    <div class="tb"><button class="s" @click="txtFile(npRep.text,'Звіт НП '+npRep.title+'.txt')">⬇ Звіт .txt</button><button class="s" @click="copyTxt(npRep.text)">Копіювати</button><button class="s" @click="npRep=null">Закрити</button></div>
+    <pre style="white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px solid #dde;border-radius:6px;padding:10px;font:13px/1.5 ui-monospace,Consolas,monospace;max-height:420px;overflow:auto">{{npRep.text}}</pre>
   </div>
 
   <template v-if="ev && eMeta">
@@ -1074,9 +1081,9 @@ tr.eg td{border-top:2px solid #8a96ad}
 <section v-else-if="tab==='templates'">
 <h3>Шаблони документів</h3>
 <small>Файли зберігаються в закритому сховищі й доступні лише після входу в систему. Перед завантаженням перевіряється, що теги в подвійних фігурних дужках записані коректно. Новий файл замінює попередній.</small>
-<table><tr><th>Документ</th><th>Стан</th><th>Завантажити файл (.docx)</th></tr>
+<table><tr><th>Документ</th><th>Стан</th><th>Завантажити файл</th></tr>
 <tr v-for="k in TPLS" :key="k[0]"><td>{{k[1]}}</td><td>{{tpl[k[0]]?'✔ завантажено '+fmt(tpl[k[0]]):'— немає'}}</td>
-<td><input type="file" accept=".docx" @change="uploadTpl(k[0],$event)"></td></tr></table>
+<td><input type="file" :accept="k[0].startsWith('np')?'.xlsx':'.docx'" @change="uploadTpl(k[0],$event)"></td></tr></table>
 </section>
 
 <!-- Затвердження -->
@@ -3426,6 +3433,236 @@ const cloneData=d=>{const o=JSON.parse(JSON.stringify(d||{}));YEAR_FIELDS.forEac
 return{cloneData,YEAR_FIELDS,parseTexts,SECTIONS,FIELD_KEYS,DESC_GROUPS,parseDesc,blank,context,componentsXml,matrixXml,nrkXml,prnCompXml,lines}
 })();
 // ===== V2-OPP END =====
+// ===== V2-NP BEGIN =====
+// Оновлення файлу НП (.xlsx) даними БД: шаблон = повний НП минулого року (ExcelJS передається ззовні)
+const NPX=(()=>{
+const cn=n=>{let s='';while(n>0){const m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26)}return s};
+const ci=s=>s.split('').reduce((a,c)=>a*26+c.charCodeAt(0)-64,0);
+const norm=s=>String(s||'').split('/')[0].toLowerCase().replace(/[^a-zа-яіїєґ0-9]+/g,'');
+const normAll=s=>String(s||'').toLowerCase().replace(/[^a-zа-яіїєґ0-9]+/g,'');
+const num=x=>{const v=parseFloat(String(x==null?'':x).replace(',','.'));return isFinite(v)?v:0};
+const txt=v=>{if(v==null)return'';if(typeof v==='object'){if(v.richText)return v.richText.map(x=>x.text).join('');if('result' in v)return v.result==null?'':String(v.result);if(v.text!=null)return String(v.text);if(v.formula)return'';return''}return String(v)};
+const isF=c=>{try{return!!c.formula}catch(e){return false}};
+const cval=c=>{const v=c.value;if(v&&typeof v==='object'&&!v.richText&&('formula' in v||'sharedFormula' in v))return v.result;return v&&v.richText?txt(v):v};
+const REF=/(\$?)([A-Z]{1,3})(\$?)(\d+)(?![\d(A-Za-z_])/g;
+// --- знайти аркуш плану
+function findPlan(wb){return wb.worksheets.find(w=>w.state==='visible'&&[1,2,3].some(r=>[1,2,3,4].some(c=>/Освітній компонент/i.test(txt(w.getCell(r,c).value)))))}
+function layout(ws){
+ let numRow=0;for(let r=5;r<=14;r++){if(txt(ws.getCell(r,1).value).trim()==='1'&&isF(ws.getCell(r,2))){numRow=r;break}}
+ const startRow=(numRow||8)+1;
+ let last=0;for(let r=ws.rowCount;r>=startRow;r--){const row=ws.getRow(r);let any=false;row.eachCell({includeEmpty:false},c=>{if(c.value!=null&&c.value!=='')any=true});if(any){last=r;break}}
+ // блоки семестрів: рядок шапки з послідовними цілими 1..n
+ let blocks=[];
+ for(let r=1;r<startRow;r++){const cand=[];let pv=null;for(let c=14;c<=ws.columnCount;c++){const v=cval(ws.getCell(r,c));const ok=v!==''&&v!=null&&Number.isInteger(+v)&&+v>=1&&+v<=12;if(ok&&!(pv!=null&&+v===pv))cand.push({sem:+v,c});pv=ok?+v:null}
+  if(cand.length>=3&&cand.every((x,i)=>i===0||x.sem===cand[i-1].sem+1)){blocks=cand;break}}
+ let dept=0;for(let r=1;r<startRow&&!dept;r++)for(let c=14;c<=ws.columnCount;c++)if(/Кафедра|Department/i.test(txt(ws.getCell(r,c).value))){dept=c;break}
+ let footer=0;for(let r=startRow;r<=last;r++){if(/^ЗАГАЛЬНА КІЛЬКІСТЬ/i.test(txt(ws.getCell(r,1).value).trim())){footer=r;break}}
+ const isItem=r=>{const a=txt(ws.getCell(r,1).value).trim(),b=ws.getCell(r,2);return /^\d+(\.\d+)?\*?$/.test(a)&&!isF(b)&&/[A-Za-zА-Яа-яІіЇїЄє]{3}/.test(txt(b.value))};
+ const items=[];for(let r=startRow;r<=(footer||last);r++)if(isItem(r))items.push(r);
+ return{numRow,startRow,last,blocks,dept,footer,items}}
+// --- дані рядка з елемента БД
+function rowData(it){
+ const hb=it.hours_by_semester&&typeof it.hours_by_semester==='object'?it.hours_by_semester:{};
+ const per={};let any=false;
+ Object.keys(hb).forEach(k=>{const e=hb[k]||{};const v={lec:num(e.lectures),prac:num(e.practicals),lab:num(e.labs),cons:num(e.consultations)};if(v.lec+v.prac+v.lab+v.cons>0){per[+k]=v;any=true}});
+ if(!any&&it.semester){const v={lec:num(it.hours_lectures),prac:num(it.hours_practicals),lab:num(it.hours_labs),cons:num(it.hours_consultations)};if(v.lec+v.prac+v.lab+v.cons>0)per[+it.semester]=v}
+ const exam=[],pass=[];let dz=false;
+ const addC=(s,c)=>{if(!c||!s)return;if(/іспит|екзамен/i.test(c))exam.push(+s);else if(/залік/i.test(c)){pass.push(+s);if(/диф/i.test(c))dz=true}};
+ let hasCtl=false,perSemCtl=false;Object.keys(hb).forEach(k=>{if(hb[k]&&hb[k].control){addC(k,hb[k].control);hasCtl=true;perSemCtl=true}});
+ if(!hasCtl&&it.control_type){const s=it.semester||Math.max(0,...Object.keys(per).map(Number))||null;addC(s,it.control_type);hasCtl=exam.length+pass.length>0}
+ let total=num(it.hours_total);if(!total){const sk=Object.keys(hb);if(sk.length===1)total=num((hb[sk[0]]||{}).total)}
+ if(!total&&it.ects)total=Math.round(num(it.ects)*30*100)/100;
+ const uniq=a=>[...new Set(a)].sort((x,y)=>x-y);
+ return{per,exam:uniq(exam),pass:uniq(pass),dz,hasCtl,perSemCtl,total,ects:it.ects==null?null:num(it.ects),dept:it.department_abbr||'',name:[it.name_uk,it.name_en].filter(Boolean).join(' / ')}}
+const fmtSems=a=>a.length===1?a[0]:a.join(',');
+// --- перебудова рядків із перерахунком формул, злиттів і висот
+function restructure(ws,startRow,oldLast,plan,maxC,anchorExt){
+ const snap={};const oldToNew={};
+ for(let r=startRow;r<=oldLast;r++){const row=ws.getRow(r);const cells=[];
+  for(let c=1;c<=maxC;c++){const cell=ws.getCell(r,c);const f=isF(cell)?cell.formula:null;cells.push({v:f?null:cell.value,f,style:JSON.parse(JSON.stringify(cell.style||{}))})}
+  snap[r]={h:row.height,cells}}
+ const merges=(ws.model.merges||[]).map(m=>{const [a,b]=m.split(':');const ma=a.match(/([A-Z]+)(\d+)/),mb=(b||a).match(/([A-Z]+)(\d+)/);return{c1:ma[1],r1:+ma[2],c2:mb[1],r2:+mb[2],raw:m}}).filter(m=>m.r1>=startRow&&m.r1<=oldLast);
+ merges.forEach(m=>{try{ws.unMergeCells(m.raw)}catch(e){}});
+ plan.forEach((e,i)=>{if(e.src!=null)oldToNew[e.src]=startRow+i});
+ const surv=Object.keys(oldToNew).map(Number).sort((a,b)=>a-b);
+ const warn=[];
+ const mapRow=(o,side)=>{if(o<startRow||o>oldLast)return o;
+  if(side==='end'&&anchorExt[o]!=null&&oldToNew[o]!=null)return oldToNew[o]+anchorExt[o];
+  if(oldToNew[o]!=null)return oldToNew[o];
+  if(side==='start'){const n=surv.find(x=>x>o);return n!=null?oldToNew[n]:null}
+  if(side==='end'){const p=[...surv].reverse().find(x=>x<o);return p!=null?oldToNew[p]:null}
+  return null};
+ const xlat=(f,srcRow,newRow,isClone)=>f.replace(/([A-Z]{1,3}\$?\d+)\s*:\s*(\$?[A-Z]{1,3}\$?\d+)|(\$?)([A-Z]{1,3})(\$?)(\d+)(?![\d(A-Za-z_])/g,(m,ra,rb,d1,c1,d2,r1)=>{
+   if(ra){const pa=ra.match(/^(\$?[A-Z]{1,3})(\$?)(\d+)$/)||ra.match(/^([A-Z]{1,3})(\$?)(\d+)$/),pb=rb.match(/^(\$?[A-Z]{1,3})(\$?)(\d+)$/);
+     if(!pa||!pb)return m;const a=+pa[3],b=+pb[3];let na,nb;
+     if(isClone){na=a===srcRow?newRow:a;nb=b===srcRow?newRow:b}else{na=mapRow(a,'start');nb=mapRow(b,'end');if(na==null||nb==null||nb<na){warn.push('Діапазон '+m+' у рядку '+newRow+' посилається на видалені рядки');return m}}
+     return pa[1]+pa[2]+na+':'+pb[1]+pb[2]+nb}
+   const o=+r1;let n;if(isClone)n=o===srcRow?newRow:o;else{n=mapRow(o,'single');if(n==null){warn.push('Формула у рядку '+newRow+' посилається на видалений рядок '+o);return m}}
+   return d1+c1+d2+n});
+ // очистити область
+ const newLast=startRow+plan.length-1,clearTo=Math.max(oldLast,newLast);
+ for(let r=startRow;r<=clearTo;r++)for(let c=1;c<=maxC;c++){const cell=ws.getCell(r,c);cell.value=null}
+ plan.forEach((e,i)=>{const r=startRow+i,srcRow=e.src!=null?e.src:e.clone,sn=snap[srcRow];if(!sn)return;
+  const isClone=e.src==null;
+  for(let c=1;c<=maxC;c++){const cell=ws.getCell(r,c),s=sn.cells[c-1];cell.style=JSON.parse(JSON.stringify(s.style));
+   if(s.f)cell.value={formula:xlat(s.f,srcRow,r,isClone)};else if(!isClone&&s.v!=null)cell.value=s.v}
+  if(sn.h!=null)ws.getRow(r).height=sn.h});
+ for(let r=newLast+1;r<=oldLast;r++){for(let c=1;c<=maxC;c++){ws.getCell(r,c).style={}}}
+ // злиття
+ merges.forEach(m=>{const tops=[];plan.forEach((e,i)=>{if((e.src!=null?e.src:e.clone)===m.r1&&(e.src!=null||m.r1===m.r2))tops.push(startRow+i)});
+  tops.forEach(t=>{try{ws.mergeCells(`${m.c1}${t}:${m.c2}${t+(m.r2-m.r1)}`)}catch(e){}})});
+ return{oldToNew,newLast,warn}}
+
+// --- мінімальний обчислювач формул (SUM, COUNT, + - * /) — щоб у файлі були актуальні кешовані результати
+function recalc(ws,r0,r1,maxC){
+ const memo=new Map();const ERR={err:'#DIV/0!'};
+ const lit=(r,c)=>{const v=cval(ws.getCell(r,c));return v};
+ const numOf=v=>{if(typeof v==='number')return v;if(v&&v.err)throw v;if(typeof v==='string'&&/^\s*-?\d+([.,]\d+)?\s*$/.test(v))return parseFloat(v.replace(',','.'));return 0};
+ const cellVal=(r,c,k)=>{ // k — глибина
+  if(r>=r0&&r<=r1){const key=r*1000+c;if(memo.has(key)){const m=memo.get(key);if(m===undefined)return 0;return m}
+   const cell=ws.getCell(r,c);if(isF(cell)){memo.set(key,undefined);let res;try{res=evalF(cell.formula)}catch(e){res=e&&e.err?e:ERR}memo.set(key,res);return res}
+   const v=lit(r,c);memo.set(key,v);return v}
+  return lit(r,c)};
+ const evalF=f=>{
+  const tk=f.replace(/\s+/g,'').match(/\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?|[A-Z]+(?=\()|\d+(?:\.\d+)?|[()+\-*\/,]/g)||[];let i=0;
+  const peek=()=>tk[i],next=()=>tk[i++];
+  const addr=s=>{const m=s.replace(/\$/g,'').match(/^([A-Z]+)(\d+)$/);return{c:ci(m[1]),r:+m[2]}};
+  const rangeVals=s=>{const [a,b]=s.split(':');const A=addr(a),B=addr(b||a);const out=[];for(let r=Math.min(A.r,B.r);r<=Math.max(A.r,B.r);r++)for(let c=Math.min(A.c,B.c);c<=Math.max(A.c,B.c);c++)out.push(cellVal(r,c));return out};
+  function expr(){let v=term();while(peek()==='+'||peek()==='-'){const op=next();const t=term();v=op==='+'?v+t:v-t}return v}
+  function term(){let v=factor();while(peek()==='*'||peek()==='/'){const op=next();const t=factor();if(op==='*')v*=t;else{if(t===0)throw ERR;v/=t}}return v}
+  function factor(){const t=next();
+   if(t==='-')return -factor();if(t==='+')return factor();
+   if(t==='('){const v=expr();next();return v}
+   if(/^\d/.test(t))return parseFloat(t);
+   if(/^[A-Z]+$/.test(t)&&peek()==='('){next();const args=[];if(peek()!==')'){for(;;){if(/^\$?[A-Z]{1,3}\$?\d+(:|$)/.test(peek()||'')&&(tk[i+1]===','||tk[i+1]===')')){args.push({vals:rangeVals(next())})}else args.push({v:expr()});if(peek()===','){next();if(peek()===')')break;continue}break}}next();
+    const vals=args.flatMap(a=>a.vals?a.vals:[a.v]);
+    if(t==='SUM')return vals.reduce((s,x)=>{if(x&&x.err)throw x;return s+(typeof x==='number'?x:0)},0);
+    if(t==='COUNT')return vals.filter(x=>typeof x==='number').length;
+    throw ERR}
+   if(/^\$?[A-Z]{1,3}\$?\d+/.test(t)){if(t.includes(':'))throw ERR;const a=addr(t);return numOf(cellVal(a.r,a.c))}
+   throw ERR}
+  const v=expr();return v};
+ for(let r=r0;r<=r1;r++)for(let c=1;c<=maxC;c++){const cell=ws.getCell(r,c);if(isF(cell)){const f=cell.formula;const res=cellVal(r,c);cell.value=res&&res.err?{formula:f,result:{error:res.err}}:{formula:f,result:typeof res==='number'?Math.round(res*1e9)/1e9:res}}}}
+// --- головна функція
+async function update(ExcelJS,buf,D,vid,o){
+ o=o||{};const rep={matched:0,changes:[],added:[],kept:[],removed:[],warnings:[],sheet:''};
+ const wb=new ExcelJS.Workbook();await wb.xlsx.load(buf);
+ const ws=findPlan(wb);if(!ws)throw new Error('У шаблоні не знайдено аркуш плану (заголовок «Освітній компонент»)');
+ rep.sheet=ws.name;const L=layout(ws);
+ if(!L.items.length)throw new Error('У шаблоні не знайдено рядків компонентів');
+ if(!L.blocks.length)rep.warnings.push('Не знайдено блоків семестрів у шапці — години по семестрах не оновлено');
+ const cur=(D.curricula||[]).find(c=>c.version_id===vid);
+ const db=cur?(D.curriculum_items||[]).filter(i=>i.curriculum_id===cur.id).sort((a,b)=>((a.sort==null?1e9:a.sort)-(b.sort==null?1e9:b.sort))):[];
+ if(!db.length)throw new Error('У БД немає навчального плану для цієї версії');
+ // зіставлення
+ const T=L.items.map(r=>{const f=ws.getCell(r,6);return{row:r,A:txt(ws.getCell(r,1).value).trim(),B:txt(ws.getCell(r,2).value),key:norm(txt(ws.getCell(r,2).value)),ects:num(cval(f)),used:false,it:null}});
+ const matchOf=new Map();
+ [true,false].forEach(strict=>db.forEach(it=>{if(matchOf.has(it))return;const k=norm(it.name_uk);
+  const c=T.filter(t=>!t.used&&t.key===k&&(!strict||Math.abs(t.ects-num(it.ects))<1e-9))[0];if(c){c.used=true;c.it=it;matchOf.set(it,c)}}));
+ rep.matched=matchOf.size;
+ const unmatchedT=T.filter(t=>!t.used);
+ const unmatchedDb=db.filter(i=>!matchOf.has(i));
+ // план рядків
+ const oldLast=L.last,plan=[],anchorExt={};const insAfter={};
+ const dbIdx=new Map(db.map((i,k)=>[i,k]));
+ unmatchedDb.forEach(it=>{let k=dbIdx.get(it)-1,anchor=null;while(k>=0){const m=matchOf.get(db[k]);if(m){anchor=m.row;break}k--}
+  if(anchor==null){const nx=db.slice(dbIdx.get(it)+1).map(x=>matchOf.get(x)).filter(Boolean)[0];if(nx)anchor=nx.row-1;else anchor=T[0].row}
+  (insAfter[anchor]=insAfter[anchor]||[]).push(it)});
+ const removeSet=new Set(o.removeUnmatched?unmatchedT.map(t=>t.row):[]);
+ const newItems=[]; // {it, planIndex}
+ for(let r=L.startRow;r<=oldLast;r++){
+  if(!removeSet.has(r))plan.push({src:r});
+  const ins=insAfter[r];
+  if(ins){anchorExt[r]=ins.length;
+   // клонуємо рядок-якір (найближчий рядок компонента)
+   const cloneFrom=T.find(t=>t.row===r)?r:(T.filter(t=>t.row<=r).pop()||T[0]).row;
+   ins.forEach(it=>{plan.push({clone:cloneFrom,newItem:it})})}}
+ // клонований рядок має «чисту» дату: значення не копіюються (див. restructure), формули — копіюються
+ const structural=plan.length!==oldLast-L.startRow+1||plan.some(e=>e.src==null);
+ const maxC=Math.max(ws.columnCount,L.dept||0,61);
+ const R=structural?restructure(ws,L.startRow,oldLast,plan,maxC,anchorExt):{oldToNew:Object.fromEntries(plan.map((e,i)=>[e.src,L.startRow+i])),newLast:oldLast,warn:[]};
+ rep.warnings.push(...R.warn);
+ // рядки в новому файлі
+ const rowOf=old=>R.oldToNew[old];
+ const targets=[]; // {row,it,isNew}
+ matchOf.forEach((t,it)=>targets.push({row:rowOf(t.row),it,isNew:false,t}));
+ if(structural){let i=0;plan.forEach((e,k)=>{if(e.newItem)targets.push({row:L.startRow+k,it:e.newItem,isNew:true})})}
+ // записати дані
+ const setLit=(cell,val,label,nm,fmt)=>{ if(isF(cell))return false;
+   const cv=cval(cell);const same=(cv==null||cv==='')&&(val==null||val==='')||(typeof val==='number'&&num(cv)===val&&cv!=='')||String(cv)===String(val);
+   if(same)return false;cell.value=(val===''?null:val);
+   if(label&&!/^(?:new)$/.test(nm))rep.changes.push(`${nm}: ${label} ${cv==null||cv===''?'—':cv} → ${val==null||val===''?'—':val}`);return true};
+ targets.forEach(({row,it,isNew})=>{
+  const d=rowData(it),nm=norm(it.name_uk)?it.name_uk:'(без назви)';
+  const lab=isNew?null:undefined;
+  const L2=(label)=>isNew?null:label;
+  // назва
+  const bc=ws.getCell(row,2);if(isNew||normAll(txt(bc.value))!==normAll(d.name)){if(!isNew)rep.changes.push(`${nm}: назва «${txt(bc.value)}» → «${d.name}»`);bc.value=d.name}
+  // ЄКТС і години
+  const F=ws.getCell(row,6),G=ws.getCell(row,7);
+  const filled=c=>{const v=cval(c);return v!=null&&v!==''};
+  if(d.ects!=null&&(isNew||filled(F)))setLit(F,d.ects,L2('ЄКТС'),nm);
+  if(d.total&&(isNew||filled(G)))setLit(G,d.total,L2('годин'),nm);
+  // семестри
+  const sum={lec:0,prac:0,lab:0,cons:0};
+  L.blocks.forEach(b=>{const v=d.per[b.sem]||{lec:0,prac:0,lab:0,cons:0};['lec','prac','lab','cons'].forEach((k,j)=>{
+    const cell=ws.getCell(row,b.c+j);sum[k]+=v[k];const nv=v[k]||null;
+    if(!isF(cell)){const cv=num(cval(cell));if(cv!==(v[k]||0)){if(!isNew)rep.changes.push(`${nm}: сем.${b.sem} ${['лк','пз','лб','конс'][j]} ${cv||'—'} → ${v[k]||'—'}`);cell.value=nv}}})});
+  Object.keys(d.per).forEach(s=>{if(!L.blocks.some(b=>b.sem===+s))rep.warnings.push(`${nm}: семестр ${s} відсутній у шаблоні — години не записано`)});
+  // підсумки по компоненту (якщо не формули)
+  [['lec',9],['prac',10],['lab',11],['cons',12]].forEach(([k,c])=>{const cell=ws.getCell(row,c);if(L.blocks.length&&!isF(cell)){const val=sum[k]||null,cv=num(cval(cell));if(cv!==(val||0))cell.value=val}});
+  const H=ws.getCell(row,8),M=ws.getCell(row,13);
+  if(L.blocks.length&&!isF(H)){const hv=sum.lec+sum.prac+sum.lab+sum.cons;H.value=hv||null}
+  if(!isF(M)&&d.total){const hv=sum.lec+sum.prac+sum.lab+sum.cons;M.value=d.total-hv}
+  // контроль: повне перезаписування лише якщо у БД є форма по семестрах; інакше — лише заповнення порожнього або зміна форми (іспит↔залік)
+  if(d.hasCtl){const C=ws.getCell(row,3),Dd=ws.getCell(row,4);
+   const ev=d.exam.length?fmtSems(d.exam):null,pv=d.pass.length?fmtSems(d.pass)+(d.dz?' ДЗ':''):null;
+   const ns=a=>(String(a==null?'':a).match(/\d+/g)||[]).join(',');
+   const cc=ns(cval(C)),pc=ns(cval(Dd));
+   const full=d.perSemCtl;
+   const tForm=cc?'exam':pc?'pass':'';const dForm=d.exam.length?'exam':d.pass.length?'pass':'';
+   const doWrite=isNew||full||!tForm||tForm!==dForm;
+   if(doWrite){
+    if(!isF(C)&&cc!==ns(ev)){if(!isNew)rep.changes.push(`${nm}: іспит ${cc||'—'} → ${ev==null?'—':ev}`);C.value=ev}
+    if(!isF(Dd)&&pc!==ns(pv)){if(!isNew)rep.changes.push(`${nm}: залік ${pc||'—'} → ${pv==null?'—':pv}`);Dd.value=pv}}}
+  if(it.coursework&&isNew){const E=ws.getCell(row,5),last=Math.max(0,...Object.keys(d.per).map(Number));if(last)E.value=last+'КР'}
+  // кафедра
+  if(L.dept&&d.dept){const Dc=ws.getCell(row,L.dept);if(norm(txt(Dc.value))!==norm(d.dept)){if(!isNew)rep.changes.push(`${nm}: кафедра ${txt(Dc.value)||'—'} → ${d.dept}`);Dc.value=d.dept}}
+  if(isNew)rep.added.push(nm);
+ });
+ // перелік рядків шаблону без відповідника
+ unmatchedT.forEach(t=>{const nm=t.B.split('/')[0].trim();(removeSet.has(t.row)?rep.removed:rep.kept).push(`${t.A}. ${nm}`)});
+ if(rep.kept.length)rep.warnings.push('Рядки шаблону без відповідника в БД залишено (їх треба вилучити вручну або ввімкнути «видаляти рядки»): '+rep.kept.length);
+ // перенумерація
+ if(structural){const rows=[];plan.forEach((e,i)=>{const r=L.startRow+i;const a=txt(ws.getCell(r,1).value).trim();
+    if(e.newItem)rows.push({r,a:null});else if(e.src!=null&&L.items.includes(e.src))rows.push({r,a})});
+  let cnt=0,prev=null;rows.forEach(x=>{if(x.a==null){cnt++;prev=null;ws.getCell(x.r,1).value=cnt;return}
+   const m=x.a.match(/^(\d+)(.*)$/);if(!m){return}
+   if(!(prev!=null&&m[1]===prev&&m[2]!==''))cnt++;prev=m[1];
+   const nv=m[2]===''?cnt:cnt+m[2];ws.getCell(x.r,1).value=nv})}
+ // область друку
+ try{const pa=ws.pageSetup.printArea;if(pa&&R.newLast!==oldLast)ws.pageSetup.printArea=pa.replace(/(\d+)$/,m=>String(+m+(R.newLast-oldLast)))}catch(e){}
+ // титул: рік прийому
+ const ver=(D.program_versions||[]).find(v=>v.id===vid);
+ if(ver){let ny=0;wb.worksheets.filter(w=>w!==ws&&w.state==='visible').forEach(w=>w.eachRow(row=>row.eachCell(c=>{const s=txt(c.value);
+   if(/(Прийом|Admission)/.test(s)&&/\d{4}/.test(s)&&!isF(c)){const n=s.replace(/(Прийом\s+)\d{4}/,'$1'+ver.entry_year).replace(/(Admission of\s+)\d{4}/,'$1'+ver.entry_year);if(n!==s){c.value=n;ny++;rep.changes.push(`Титул: рік прийому → ${ver.entry_year}`)}}})));
+  if(!ny)rep.warnings.push('На титулі не знайдено напису «Прийом РРРР року» — рік не змінено');
+  const prog=(D.programs||[]).find(p=>p.id===ver.program_id);
+  if(prog&&prog.name){const names=[];wb.worksheets.filter(w=>w!==ws&&w.state==='visible').forEach(w=>w.eachRow(row=>row.eachCell(c=>{const m=txt(c.value).match(/«([^»]+)»/);if(m)names.push(normAll(m[1]))})));
+   if(names.length&&!names.includes(normAll(prog.name)))rep.warnings.push('Назва ОП на титулі («…») не збігається з БД: «'+prog.name+'» — перевірте титул вручну')}}
+ rep.warnings.push('Підписи на титулі та в кінці (проректор, декан, завідувач) і графік навчального процесу взято з шаблону без змін');
+ if(structural){for(let r=L.startRow;r<=R.newLast;r++){const b=txt(ws.getCell(r,2).value);if(/^(ВСЬОГО|РАЗОМ)/.test(b)){let f='';try{f=ws.getCell(r,6).formula||''}catch(e){}
+   if(/:[A-Z]+\d+,[A-Z]+\d+:/.test(f))rep.warnings.push('Підсумок у рядку '+r+' («'+b.split('/')[0].trim()+'») складається з окремих діапазонів — після зміни складу рядків перевірте його вручну')}}}
+ recalc(ws,L.startRow,R.newLast,maxC);
+ wb.calcProperties=wb.calcProperties||{};wb.calcProperties.fullCalcOnLoad=true;
+ const out=await wb.xlsx.writeBuffer();
+ rep.rows={items:L.items.length,added:rep.added.length};
+ return{buffer:out,report:rep}}
+const reportText=(r,title)=>{const L=[`Звіт оновлення НП: ${title||''}`,'',`Аркуш плану: ${r.sheet}`,`Зіставлено компонентів: ${r.matched}`,`Додано рядків: ${r.added.length}`,`Видалено рядків: ${r.removed.length}`,`Залишено рядків без відповідника: ${r.kept.length}`,''];
+ const sec=(t,a)=>{if(a.length){L.push(t);a.forEach(x=>L.push('  • '+x));L.push('')}};
+ sec('Додані в НП (немає в шаблоні):',r.added);sec('Видалені з НП:',r.removed);sec('Є в шаблоні, немає в БД (залишено):',r.kept);sec('Зміни в існуючих рядках:',r.changes);sec('Зауваження:',r.warnings);return L.join('\n')};
+return{update,reportText,layout,findPlan,rowData,recalc}})();
+// ===== V2-NP END =====
 
 // ===== RELEASES BEGIN =====
 // Історія версій, нові зверху. Пункт: текст або [текст,'a'] — 'a' бачить лише адміністратор.
@@ -3478,7 +3715,7 @@ const RELEASES=[
 Vue.createApp({
 data(){return{
   RELEASES,T,KL,KORD,HOURS,HF,LISTS,TXT1,TXT2,EX,dsel:'',dd:null,dstate:'',tpl:{},
-  TPLS:[['rpnd','РПНД'],['syllabus','Силабус'],['opp','ОПП']],
+  TPLS:[['rpnd','РПНД'],['syllabus','Силабус'],['opp','ОПП'],['np_bak','НП бакалавр (повний НП минулого року, .xlsx)'],['np_mag','НП магістр (повний НП минулого року, .xlsx)']],
   sigs:{},sigUrl:{},xsrc:'',xclone:'',xopt:{doc:true,comps:true,params:false},
   fi:null,fiBusy:false,FI_GROUPS:[['goal','Мета, результати навчання, передумови (розділ 2)'],['struct','Модулі, теми й години (розділи 3–4)'],['lists','Теми практичних, лабораторних занять і самостійної роботи (розділи 5–7)'],['scores','Розподіл балів (9.1)'],['texts','Методи навчання, політики, критерії оцінювання (розділи 8–9)'],['lit','Література та програмні продукти (розділи 10–11)']],
   FI_ST:{exact:'✔ збігається',reworded:'✎ код збігається, формулювання інше (лишається з бази)',moved:'↔ у базі інший код',missing:'✖ немає в базі цієї версії ОП'},
@@ -3502,7 +3739,7 @@ loadYear:new Date().getFullYear(), loadTeacher:null,
 impLoad:null, loadSkipNonDisc:true, loadOnlyMatched:false, loadSharedKey:true,
 statusYear:0, statusFilter:'',
 // v2: перевірки й звіт змін
-ckV:'', ckSev:'', rpA:'', rpB:'', OPPX:Object.freeze(OPPX), otV:'', otF:null, otDonor:'', otBusy:false, oppMissing:false, otWarn:[], clYear:'', clBusy:false,
+ckV:'', ckSev:'', rpA:'', rpB:'', OPPX:Object.freeze(OPPX), otV:'', otF:null, otDonor:'', otBusy:false, oppMissing:false, otWarn:[], clYear:'', clBusy:false, npBusy:false, npRem:false, npRep:null,
 
   tabs:[
   ['faculties','Факультети'],
@@ -4302,8 +4539,12 @@ return{imgs,noFile}},
 async sigGet(pth){const c=this._sigCache;if(c&&c.has(pth))return c.get(pth);
 const{data}=await sb.storage.from('signatures').download(pth);if(c)c.set(pth,data||null);return data},
 async loadTpl(){const{data,error}=await sb.storage.from('templates').list('');if(error)return;
-const t={};(data||[]).forEach(f=>{t[f.name.replace(/\.docx$/,'')]=f.updated_at||f.created_at});this.tpl=t},
+const t={};(data||[]).forEach(f=>{t[f.name.replace(/\.(docx|xlsx)$/,'')]=f.updated_at||f.created_at});this.tpl=t},
 async uploadTpl(kind,ev){const f=ev.target.files[0];if(!f)return;
+if(kind.startsWith('np')){try{if(!/\.xlsx$/i.test(f.name))throw new Error('потрібен файл .xlsx');const ab=await f.arrayBuffer();const z=new PizZip(ab);if(!z.file('xl/workbook.xml'))throw new Error('це не книга Excel');
+await this.loadExcelJS();const wb=new window.ExcelJS.Workbook();await wb.xlsx.load(ab);if(!NPX.findPlan(wb))throw new Error('не знайдено аркуш плану із заголовком «Освітній компонент»');
+const{error}=await sb.storage.from('templates').upload(kind+'.xlsx',f,{upsert:true,contentType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});if(error)throw error;await this.loadTpl();this.notify('Шаблон НП завантажено')}
+catch(e){this.notify('Файл не прийнято: '+(e.message||e),'err')}ev.target.value='';return}
 try{const doc=new window.docxtemplater(new PizZip(await f.arrayBuffer()),{parser:tagParser,delimiters:{start:'{{',end:'}}'},paragraphLoop:true,linebreaks:true});
 const n=(doc.getFullText().match(/\{\{/g)||[]).length;
 const{error}=await sb.storage.from('templates').upload(kind+'.docx',f,{upsert:true,contentType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
@@ -4335,6 +4576,15 @@ OPPX.FIELD_KEYS.forEach(k=>{if(d[k]==null)d[k]=''});this.otF=this.otV?d:null;thi
 async otSave(){if(!this.otV||!this.otF)return;this.otBusy=true;
 try{const{error}=await sb.from('opp_texts').upsert({version_id:this.otV,data:this.otF,updated_by:this.session.user.id});if(error)throw error;
 this.D.opp_texts=await all('opp_texts');this.notify('Збережено')}catch(e){this.err(e)}this.otBusy=false},
+loadExcelJS(){return window.ExcelJS?Promise.resolve():new Promise((ok,no)=>{const sc=document.createElement('script');sc.src='https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';sc.onload=()=>ok();sc.onerror=()=>no(new Error('Не вдалося завантажити бібліотеку ExcelJS'));document.head.appendChild(sc)})},
+async npDownload(){const vid=this.ev;if(!vid)return;this.npBusy=true;this.npRep=null;
+try{const ver=this.D.program_versions.find(v=>v.id===vid),prog=this.entAt('programs',ver.program_id,ver.entry_year)||{};
+const kind=prog.education_level==='бакалаврський'?'np_bak':'np_mag';
+const{data:tb,error:te}=await sb.storage.from('templates').download(kind+'.xlsx');if(te||!tb)throw new Error('Шаблон «'+(kind==='np_bak'?'НП бакалавр':'НП магістр')+'» не завантажено (вкладка «Шаблони»)');
+await this.loadExcelJS();const res=await NPX.update(window.ExcelJS,await tb.arrayBuffer(),this.D,vid,{removeUnmatched:this.npRem});
+const title=this.lab('program_versions',ver);this.npRep={title,text:NPX.reportText(res.report,title),n:res.report.changes.length+res.report.added.length+res.report.removed.length};
+this.saveBytes(res.buffer,('НП '+title).replace(/[\\/:*?"<>|]/g,'')+'.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+this.notify('НП сформовано')}catch(e){this.notify('Не вдалося сформувати НП: '+(e.message||e),'err')}this.npBusy=false},
 async cloneVersion(){const src=(this.D.program_versions||[]).find(v=>v.id===this.ev);if(!src)return;
 const year=Number(this.clYear||src.entry_year+1);
 if(!Number.isInteger(year)||year<2000||year>2100)return this.notify('Вкажіть рік набору','err');
