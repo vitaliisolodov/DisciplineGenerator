@@ -123,6 +123,25 @@ table.cmp td.ac{width:132px;white-space:nowrap}
 .cmp-add textarea{field-sizing:content;min-height:60px}
 .cmp-add .full{grid-column:1/-1}
 pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px solid #dde;border-radius:6px;padding:12px;font:13px/1.5 ui-monospace,Consolas,monospace;margin-top:10px}
+
+/* ===== «НП та ОПП»: спільна панель версії й кроків ===== */
+.npbar{position:sticky;top:0;z-index:20;background:#fff;border:1px solid #e3e7ef;border-radius:8px;padding:10px 12px;margin:0 0 12px;box-shadow:0 1px 4px #0001}
+.npbar .vrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.npbar .vrow select{min-width:320px;flex:1;max-width:640px}
+.steps{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+main .steps button,main .seg button{background:#eef1f6;border-color:#eef1f6;color:#1f3a5f}
+main .steps button:hover:not(:disabled),main .seg button:hover:not(:disabled){background:#dfe6f1;border-color:#dfe6f1}
+main .steps button.on,main .seg button.on{background:#1f3a5f;border-color:#1f3a5f;color:#fff}
+.seg{display:inline-flex;gap:6px;margin:6px 0 4px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:6px;background:#c3cad6;vertical-align:middle}
+.dot.ok{background:#2e7d32}.dot.warn{background:#d08a00}.dot.bad{background:#c62828}
+.chips{display:flex;flex-wrap:wrap;gap:6px 8px;margin:6px 0 2px;font-size:13px}
+.chip{background:#f4f6fa;border:1px solid #e3e7ef;border-radius:999px;padding:3px 10px}
+.chip.w{background:#fff8e1;border-color:#f0dca0;color:#7a5a00}.chip.e{background:#fdecea;border-color:#f0b8b4;color:#a02020}
+label.fb{display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0;font:inherit;line-height:normal;padding:5px 12px;border:1px solid #c3cad6;border-radius:4px;background:#fff;color:#1f3a5f}
+label.fb:hover{background:#eef1f6;border-color:#98a4b8}
+label.fb input{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+tr.sel td{background:#eaf2ff}
 </style>
 </head>
 <body>
@@ -145,7 +164,7 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
 
 <div v-else>
 <header>
-<button v-for="t in visibleTabs" :key="t[0]" :class="{on:tab===t[0]}" @click="go(t[0])">{{t[1]}}</button>
+<button v-for="t in visibleTabs" :key="t[0]" :class="{on:tab===t[0]||(t[0]==='np'&&NPT.includes(tab))}" @click="go(t[0])">{{t[1]}}</button>
 <span class="sp"></span>
 <select v-if="studyYears.length" v-model="sy" style="padding:5px;border-radius:4px;border:0;font:inherit">
 <option value="">Усі навчальні роки</option>
@@ -154,6 +173,25 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
 <button @click="logout">Вийти</button>
 </header>
 <main>
+<div v-if="isAdmin&&NPT.includes(tab)" class="npbar">
+  <div class="vrow">
+    <b>Версія ОП:</b>
+    <select :value="npV" @change="npSel($event)">
+      <option value="">— оберіть версію ОП —</option>
+      <option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option>
+    </select>
+    <span v-if="npV&&npStat" class="chips" style="margin:0">
+      <span class="chip" :class="{w:!npStat.plan}">📋 план: {{npStat.plan?npStat.plan+' поз.':'немає'}}</span>
+      <span class="chip" :class="{w:!npStat.comps}">🧩 {{npStat.comps}}</span>
+      <span class="chip" :class="{w:!npStat.cells}">▦ {{npStat.cells}}</span>
+      <span class="chip" :class="{w:!npStat.texts}">📘 текст {{npStat.texts?'є':'немає'}}</span>
+    </span>
+  </div>
+  <div class="steps">
+    <button v-for="st in NPSTEPS" :key="st[0]" :class="{on:npStepOn(st[0])}" @click="npGo(st[0])">{{st[1]}}<span v-if="st[2]&&npV&&npStat" class="dot" :class="npStat[st[2]]?'ok':'warn'"></span></button>
+  </div>
+  <p v-if="!npV&&tab!=='program_versions'&&tab!=='import'" class="hint" style="margin:8px 0 0">Оберіть версію ОП, з якою працюєте — вибір діє на всіх кроках. Нову ОПП створює крок «Імпорт».</p>
+</div>
 
 <!-- Універсальні таблиці довідників -->
 <div v-if="perMissing&&isAdmin" class="card" style="background:#fff3cd">⚠ У базі ще немає таблиць періодів (faculty_periods, department_periods, program_periods). Виконайте файл periods_migration.sql у Supabase → SQL Editor і оновіть сторінку. Поки що діють старі дані без періодів.</div>
@@ -213,18 +251,23 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
 <!-- Універсальні таблиці довідників -->
 <section v-else-if="T[tab]">
 <h3>{{T[tab].label}}</h3>
-<p v-if="!T[tab].noAdd"><button class="p" @click="addNew()">+ Додати</button></p>
+<p v-if="tab==='program_versions'" class="hint" style="margin:0 0 6px">Огляд усіх версій ОП і їх готовності. «Відкрити» вибирає версію для всіх кроків роботи над НП та ОПП.</p>
+<p v-if="!T[tab].noAdd"><button class="p" @click="addNew()">{{tab==='program_versions'?'+ Нова версія ОП':'+ Додати'}}</button></p>
 <div class="tb">
 <input v-model="q" type="search" placeholder="🔍 Пошук по таблиці…">
+<template v-if="tab==='program_versions'">
+<label>Навчальний рік: <select v-model.number="statusYear"><option :value="0">усі</option><option v-for="y in YEARS" :key="y" :value="y">{{y}}/{{y+1}}</option></select></label>
+<label>Стан: <select v-model="statusFilter"><option value="">усі</option><option value="noplan">без плану</option><option value="nodisc">без потоків</option><option value="missing">є розбіжності</option><option value="ready">повністю готові</option></select></label>
+</template>
 <span style="color:#667;font-size:13px">Показано {{viewRows.length}} з {{rowsOf(tab).length}}</span>
 <button class="s" v-if="q||sk||Object.values(cf).some(Boolean)" @click="resetView">Скинути фільтри</button>
 </div>
 <table>
-<tr><th v-for="f in T[tab].f" :key="f.k" class="sortable" :title="(hint(f)?hint(f)+' — ':'')+'натисніть, щоб сортувати'" @click="sortBy(f)">{{f.l}} <span style="color:#889">{{sk===f.k?(sd>0?'▲':'▼'):'⇅'}}</span></th><th v-if="tab==='programs'">Гарант / керівник ОП</th><th v-if="tab==='programs'">Стан</th><th v-if="tab==='program_versions'">План</th><th v-if="tab==='program_versions'">Потоки</th><th v-if="tab==='disciplines'" class="sortable" @click="sortBy({k:'__teacher'})">Викладачі <span style="color:#889">{{sk==='__teacher'?(sd>0?'▲':'▼'):'⇅'}}</span></th><th></th></tr>
+<tr><th v-for="f in T[tab].f" :key="f.k" class="sortable" :title="(hint(f)?hint(f)+' — ':'')+'натисніть, щоб сортувати'" @click="sortBy(f)">{{f.l}} <span style="color:#889">{{sk===f.k?(sd>0?'▲':'▼'):'⇅'}}</span></th><th v-if="tab==='programs'">Гарант / керівник ОП</th><th v-if="tab==='programs'">Стан</th><th v-if="tab==='program_versions'">План</th><th v-if="tab==='program_versions'">Компетентності, матриця, текст</th><th v-if="tab==='program_versions'">Потоки</th><th v-if="tab==='disciplines'" class="sortable" @click="sortBy({k:'__teacher'})">Викладачі <span style="color:#889">{{sk==='__teacher'?(sd>0?'▲':'▼'):'⇅'}}</span></th><th></th></tr>
 <tr class="flt" v-if="T[tab].f.some(f=>f.ref||f.opts)||tab==='disciplines'"><td v-for="f in T[tab].f" :key="f.k">
-<select v-if="f.ref||f.opts" v-model="cf[f.k]"><option :value="undefined">Усі</option><option v-for="o in opts(f)" :key="o.id" :value="o.id">{{o.l}}</option></select></td><td v-if="tab==='programs'"></td><td v-if="tab==='programs'"></td><td v-if="tab==='program_versions'"></td><td v-if="tab==='program_versions'"></td><td v-if="tab==='disciplines'">
+<select v-if="f.ref||f.opts" v-model="cf[f.k]"><option :value="undefined">Усі</option><option v-for="o in opts(f)" :key="o.id" :value="o.id">{{o.l}}</option></select></td><td v-if="tab==='programs'"></td><td v-if="tab==='programs'"></td><td v-if="tab==='program_versions'"></td><td v-if="tab==='program_versions'"></td><td v-if="tab==='program_versions'"></td><td v-if="tab==='disciplines'">
 <select v-model="cf.__teacher"><option :value="undefined">Усі викладачі</option><option v-for="p in teacherOpts" :key="p.id" :value="p.id">{{lab('profiles',p)}}</option></select></td><td></td></tr>
-<tr v-for="r in viewRows" :key="r.id">
+<tr v-for="r in viewRows" :key="r.id" :class="{sel:tab==='program_versions'&&r.id===npV}">
   <td v-for="f in T[tab].f" :key="f.k">{{show(r,f)}}</td>
   <td v-if="tab==='programs'" style="min-width:210px">
     <div v-for="g in perList('programs',r.id)" :key="g.id">{{g.guarantor||'—'}}<small>{{perText(g)}}</small></div>
@@ -237,6 +280,10 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
   <td v-if="tab==='program_versions'" style="font-size:13px;white-space:nowrap">
     <template v-if="curriculumByVersion[r.id]">📋 <b>{{curriculumByVersion[r.id].items_count}}</b> поз. · <b>{{curriculumByVersion[r.id].total_ects}}</b> кр. <small style="display:inline;color:#667">· імпорт {{fmt(curriculumByVersion[r.id].imported_at)}}</small></template>
     <span v-else style="color:#b26a00">📋 не імпортовано</span>
+  </td>
+  <td v-if="tab==='program_versions'" style="font-size:13px">
+    <template v-if="versionState[r.id]">🧩 <b>{{versionState[r.id].competencies.total}}</b> · ▦ <b>{{versionState[r.id].matrix.cells}}</b>
+      <span :style="{color:npTexts(r.id)?'#2e7d32':'#b26a00'}"> · 📘 {{npTexts(r.id)?'текст є':'тексту немає'}}</span></template>
   </td>
   <td v-if="tab==='program_versions'" style="font-size:13px">
     <template v-if="disciplinesByVersion[r.id]">🎓 <b>{{disciplinesByVersion[r.id].count}}</b> потоків
@@ -252,7 +299,9 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
   </td>
 
   <td><div class="acts"><button v-if="tab==='disciplines'" class="s dst" :class="'dst-'+(docStat[r.id]||{}).level" :title="docTip(r)" @click="openDoc(r)">▤</button>
-<button class="s ed-b" title="Редагувати" @click="edit(r)">✎</button>
+<button v-if="tab==='program_versions'" class="s" title="Відкрити версію ОП: план, компетенції, матриця, текст" @click="npOpen(r,'opp')">Відкрити ➜</button>
+<button v-if="tab==='program_versions'" class="s" title="Створити копію цієї версії на інший рік набору" @click="cloneRow(r)">⧉</button>
+<button v-if="tab!=='program_versions'" class="s ed-b" title="Редагувати" @click="edit(r)">✎</button>
 <button class="s del-b" :title="tab==='disciplines'&&!isAdmin?(teachersCount(r)>1?'Зняти себе з дисципліни':'Видалити дисципліну'):'Видалити'" v-if="!T[tab].noDel&&(isAdmin||tab==='disciplines')" @click="tab==='disciplines'&&!isAdmin?delMine(r):del(r)">✕</button></div></td>
 </tr>
 </table>
@@ -308,90 +357,33 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
 </template>
 </section>
 
-  <!-- Стан ОП -->
-<section v-else-if="tab==='status'">
-  <h3>Стан ОП, планів і потоків</h3>
-  <small>Огляд: для кожної версії ОП — чи імпортовано план, чи створено потоки, на які навчальні роки.</small>
-
-  <div class="tb" style="margin-top:8px">
-    <label>Навчальний рік:
-      <select v-model.number="statusYear">
-        <option :value="0">усі</option>
-        <option v-for="y in YEARS" :key="y" :value="y">{{y}}/{{y+1}}</option>
-      </select>
-    </label>
-    <label>Фільтр:
-      <select v-model="statusFilter">
-        <option value="">усі</option>
-        <option value="noplan">без плану</option>
-        <option value="nodisc">без потоків</option>
-        <option value="missing">є розбіжності</option>
-        <option value="ready">повністю готові</option>
-      </select>
-    </label>
-    <span style="color:#667;font-size:13px">
-      Показано {{statusRows.length}} з {{D.program_versions.length}}
-    </span>
-  </div>
-
-  <table>
-    <tr>
-      <th>ОП</th>
-      <th>Версія</th>
-      <th>План</th>
-      <th>Потоків</th>
-      <th>Навчальні роки</th>
-      <th>Викладачів</th>
-      <th>Стан</th>
-    </tr>
-    <tr v-for="row in statusRows" :key="row.version.id">
-      <td>{{row.versionLabel}}</td>
-      <td>{{row.version.entry_year}} р.в.</td>
-      <td>
-        <span v-if="row.plan">
-          ✅ {{row.plan.items_count}} дисциплін / {{row.plan.total_ects}} кредитів
-          <br><small style="color:#667">імпорт: {{fmt(row.plan.imported_at)}}</small>
-        </span>
-        <span v-else style="color:#b26a00">⚠ немає плану</span>
-      </td>
-      <td>
-        <span v-if="row.disciplines">
-          {{row.disciplines.count}}
-          <br><small style="color:#667">
-            прив'язано: {{row.disciplines.with_ci}} / {{row.disciplines.count}}
-          </small>
-        </span>
-        <span v-else style="color:#b26a00">—</span>
-      </td>
-      <td>{{row.disciplines ? row.disciplines.study_years.join(', ') || '—' : '—'}}</td>
-      <td>{{row.disciplines ? row.disciplines.teachers : 0}}</td>
-      <td>
-        <span v-if="row.state === 'ready'" style="color:#2e7d32">✅ готова</span>
-        <span v-else-if="row.state === 'noplan'" style="color:#b26a00">📋 немає плану</span>
-        <span v-else-if="row.state === 'nodisc'" style="color:#b26a00">🎓 немає потоків</span>
-        <span v-else-if="row.state === 'missing'" style="color:#c62828">
-          ⚠ {{row.disciplines.count - row.disciplines.with_ci}} потоків без плану
-        </span>
-      </td>
-    </tr>
-  </table>
-</section>
-
-
-<!-- v2: Перевірки узгодженості ОП -->
 <section v-else-if="tab==='checks'">
-  <h3>Перевірки узгодженості ОП</h3>
-  <small>Перевіряє навчальний план (години, ЄКТС, коди, форми контролю), компетентності, матрицю й потоки дисциплін вибраної версії ОП. Дані лише читаються — нічого не змінюється.</small>
-  <div class="tb" style="margin-top:8px">
-    <label>Версія ОП:
-      <select v-model="ckV"><option value="">— оберіть —</option><option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option></select>
-    </label>
-    <label>Показати:
-      <select v-model="ckSev"><option value="">усе</option><option value="warn">помилки й попередження</option><option value="err">лише помилки</option></select>
-    </label>
+  <h3>Перевірка й експорт</h3>
+  <div class="seg"><button :class="{on:tab==='checks'}" @click="go('checks')">Перевірки</button><button :class="{on:tab==='report'}" @click="go('report')">Звіт змін</button></div>
+  <div class="card" v-if="npV">
+    <b>⬇ Експорт</b>
+    <p class="hint" style="margin:2px 0 8px">Файли формуються з бази за шаблонами (вкладка «Шаблони»). Помилки перевірок нижче експорт не блокують, але варто їх переглянути.</p>
+    <div class="tb">
+      <button class="p" @click="npDownload" :disabled="npBusy">⬇ НП (.xlsx)</button>
+      <label class="chk" style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" v-model="npRem" style="width:auto"> видаляти рядки НП, яких немає в БД</label>
+      <span class="sp"></span>
+      <button class="p" @click="oppDownload">⬇ ОПП (.docx)</button>
+    </div>
+    <p v-if="ckRes&&ckRes.counts.err" class="hint" style="color:#c62828;margin:6px 0 0">✖ Є помилки перевірок: {{ckRes.counts.err}}.</p>
+  <div v-if="npRep" class="form" style="margin-top:10px;border-top:1px solid #e3e7ef;padding-top:8px">
+    <b>Звіт оновлення НП</b> <small>— {{npRep.n}} змін; файл уже завантажено</small>
+    <div class="tb"><button class="s" @click="txtFile(npRep.text,'Звіт НП '+npRep.title+'.txt')">⬇ Звіт .txt</button><button class="s" @click="copyTxt(npRep.text)">Копіювати</button><button class="s" @click="npRep=null">Закрити</button></div>
+    <pre style="white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px solid #dde;border-radius:6px;padding:10px;font:13px/1.5 ui-monospace,Consolas,monospace;max-height:420px;overflow:auto">{{npRep.text}}</pre>
+  </div>
+  </div>
+  <div class="tb">
+    <b>Перевірки узгодженості</b>
+    <select v-model="ckSev"><option value="">показати все</option><option value="warn">помилки й попередження</option><option value="err">лише помилки</option></select>
+    <span class="sp"></span>
     <button class="s" v-if="ckRes" @click="ckSave">Завантажити .txt</button>
     <button class="s" v-if="ckRes" @click="copyTxt(ckText())">Копіювати</button>
   </div>
+  <p class="hint">Перевіряє план (години, ЄКТС, коди, форми контролю), компетентності, матрицю й потоки. Дані лише читаються — нічого не змінюється.</p>
   <template v-if="ckRes">
     <p style="margin:10px 0 4px">
       <b>{{ckRes.title}}</b>:
@@ -417,28 +409,28 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
       </table>
     </div>
   </template>
-  <p v-else style="color:#667;margin-top:12px">Оберіть версію ОП, щоб побачити результат.</p>
+  <p v-else class="hint" style="margin-top:12px">Оберіть версію ОП угорі, щоб побачити результат.</p>
 </section>
 
 <!-- v2: Звіт змін між версіями ОП -->
 <section v-else-if="tab==='report'">
-  <h3>Звіт про зміни ОП</h3>
-  <small>Порівнює вибрану версію ОП з попереднім роком набору (або з іншою версією): навчальний план, компетентності, матрицю. Порівнюються поточні дані в базі; журнал змін не ведеться. Звіт можна скопіювати або завантажити для окремої звітності та ручної перевірки.</small>
-  <div class="tb" style="margin-top:8px">
-    <label>Поточна версія:
-      <select v-model="rpB" @change="rpA=''"><option value="">— оберіть —</option><option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option></select>
-    </label>
+  <h3>Перевірка й експорт</h3>
+  <div class="seg"><button :class="{on:tab==='checks'}" @click="go('checks')">Перевірки</button><button :class="{on:tab==='report'}" @click="go('report')">Звіт змін</button></div>
+  <div class="tb">
+    <b>Звіт про зміни ОП</b>
     <label>Порівняти з:
       <select v-model="rpA">
         <option value="">{{rpAuto?'попередній рік: '+lab('program_versions',rpAuto):'— немає попередньої версії —'}}</option>
         <option v-for="v in versions.filter(x=>x.id!==rpB)" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option>
       </select>
     </label>
+    <span class="sp"></span>
     <button class="p" v-if="rpRes&&rpRes.txt" @click="copyTxt(rpRes.txt)">Копіювати</button>
     <button class="s" v-if="rpRes&&rpRes.txt" @click="rpSave('md')">Завантажити .md</button>
     <button class="s" v-if="rpRes&&rpRes.txt" @click="rpSave('txt')">Завантажити .txt</button>
   </div>
-  <p v-if="!rpB" style="color:#667;margin-top:12px">Оберіть поточну версію ОП.</p>
+  <p class="hint">Порівнює поточну версію ОП з попереднім роком набору (або іншою версією): план, компетентності, матрицю. Журнал змін не ведеться — порівнюються дані в базі.</p>
+  <p v-if="!rpB" class="hint" style="margin-top:12px">Оберіть версію ОП угорі.</p>
   <p v-else-if="!rpRes" style="color:#b26a00;margin-top:12px">Для цієї версії немає попереднього року набору — оберіть версію для порівняння вручну.</p>
   <p v-else-if="rpRes.err" style="color:#c62828;margin-top:12px">{{rpRes.err}}</p>
   <pre v-else style="white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px solid #dde;border-radius:6px;padding:12px;font:13px/1.5 ui-monospace,Consolas,monospace;margin-top:10px">{{rpRes.txt}}</pre>
@@ -446,21 +438,20 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
 
 <!-- Тексти ОПП -->
 <section v-else-if="tab==='opptxt'" class="ov">
-  <h3>Тексти ОПП</h3>
-  <small>Текстові поля профілю ОП, затвердження й проєктної групи, дескриптори НРК та їх зв'язки. Перелік компонентів, компетентності, ПРН і матриці беруться зі вкладок «ОПП та НП», «Компетенції», «Матриця».</small>
+  <h3>Текст ОПП</h3>
+  <p class="hint">Текстові поля профілю ОП, затвердження й проєктної групи, дескриптори НРК та їх зв’язки. Компоненти, компетентності, ПРН і матриці беруться з попередніх кроків.</p>
   <p v-if="oppMissing" style="color:#c62828">У БД немає таблиці opp_texts — виконайте міграцію 0002 у SQL Editor.</p>
-  <div class="tb">
-    <select v-model="otV" @change="otLoad()" style="min-width:320px;max-width:520px">
-      <option value="">— оберіть версію ОП —</option>
-      <option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions', v)}}</option>
-    </select>
-    <template v-if="otF">
-      <button @click="otSave" :disabled="otBusy||oppMissing">💾 Зберегти</button>
-      <select v-model="otDonor"><option value="">— скопіювати тексти з… —</option><option v-for="v in otPrev" :key="v.id" :value="v.id">{{lab('program_versions', v)}}</option></select>
-      <button class="s" v-if="otDonor" @click="otCopy">Скопіювати</button>
+  <div class="card" v-if="otF">
+    <div class="tb" style="margin:0">
+      <button class="p" @click="otSave" :disabled="otBusy||oppMissing">💾 Зберегти</button>
+      <label class="fb" title="Розпізнає текстові розділи у файлі ОПП і підставляє їх у форму (збереження — окремою кнопкою)">⬆ Імпорт із ОПП (.docx)<input type="file" accept=".docx" @change="otImport($event)"></label>
+      <span class="sp"></span>
+      <label>Скопіювати з:
+        <select v-model="otDonor"><option value="">— оберіть версію —</option><option v-for="v in otPrev" :key="v.id" :value="v.id">{{lab('program_versions', v)}}</option></select>
+      </label>
+      <button class="s" :disabled="!otDonor" @click="otCopy">Скопіювати</button>
       <button class="s" @click="oppDownload">⬇ ОПП (.docx)</button>
-      <label class="s" style="cursor:pointer;display:inline-block;padding:5px 10px;border:1px solid #99a;border-radius:4px">⬆ Імпорт текстів із ОПП (.docx)<input type="file" accept=".docx" @change="otImport($event)" style="display:none"></label>
-    </template>
+    </div>
   </div>
   <ul v-if="otWarn.length" style="color:#b26a00;margin:6px 0"><li v-for="w in otWarn" :key="w">{{w}}</li></ul>
   <template v-if="otF">
@@ -491,28 +482,13 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
       </table></div>
     </div>
   </template>
-  <p v-else style="color:#667;margin-top:12px">Оберіть версію ОП.</p>
+  <p v-else class="hint" style="margin-top:12px">Оберіть версію ОП угорі.</p>
 </section>
 
 <!-- ОПП та НП: перегляд і ручне редагування -->
 <section v-else-if="tab==='opp'" class="ov">
-  <h3>ОПП та навчальний план</h3>
-  <small>Тут видно, що саме записано у БД для версії ОП, і можна виправити вручну (після імпорту часом лишаються помилки). Імпорт файлів — у вкладці «Імпорт».</small>
-  <div class="tb">
-    <select :value="ev" @change="eSwitch($event)" style="min-width:320px;max-width:520px">
-      <option value="">— оберіть версію ОП —</option>
-      <option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions', v)}}</option>
-    </select>
-    <button class="s" v-if="ev" @click="go('import');impStep='opp';uVid=ev;uBuild()">⬆ Імпортувати файли для цієї версії</button>
-    <span v-if="ev" style="white-space:nowrap">· копія на рік <input type="number" v-model.number="clYear" :placeholder="(eMeta&&eMeta.entry_year?eMeta.entry_year+1:'')" style="width:80px"> <button class="s" @click="cloneVersion" :disabled="clBusy">⧉ Клонувати версію</button></span>
-    <span v-if="ev" style="white-space:nowrap">· <label><input type="checkbox" v-model="npRem"> видаляти рядки НП, яких немає в БД</label> <button class="s" @click="npDownload" :disabled="npBusy">⬇ НП (.xlsx)</button></span>
-  </div>
-
-  <div v-if="npRep" class="card form">
-    <b>Звіт оновлення НП</b> <small>— {{npRep.n}} змін; файл уже завантажено</small>
-    <div class="tb"><button class="s" @click="txtFile(npRep.text,'Звіт НП '+npRep.title+'.txt')">⬇ Звіт .txt</button><button class="s" @click="copyTxt(npRep.text)">Копіювати</button><button class="s" @click="npRep=null">Закрити</button></div>
-    <pre style="white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px solid #dde;border-radius:6px;padding:10px;font:13px/1.5 ui-monospace,Consolas,monospace;max-height:420px;overflow:auto">{{npRep.text}}</pre>
-  </div>
+  <h3>План і відомості про ОП</h3>
+  <p class="hint">Що записано в базі для версії ОП. Після імпорту іноді лишаються помилки — їх можна виправити тут вручну.</p>
 
   <template v-if="ev && eMeta">
     <div class="card form">
@@ -530,18 +506,17 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
       <small>Гарант і періоди — на вкладці «Програми». Зміна «Рік набору» змінює версію ОП — обережно.</small>
     </div>
 
-    <div class="card" style="background:#f7f8fa;font-size:13px">
-      <b>Стан у БД:</b>
-      <span v-if="eInfo.cur">📋 план: <b>{{eInfo.count}}</b> позицій, <b>{{eInfo.ects}}</b> кредитів, імпортовано {{fmt(eInfo.cur.imported_at)}} ({{eInfo.cur.source_file || '—'}})</span>
-      <span v-else style="color:#b26a00">📋 плану ще немає — додайте позиції нижче або імпортуйте</span>
-      · 🎓 потоків: <b>{{eInfo.linked}}</b> з планом<span v-if="eInfo.unlinked" style="color:#b26a00">, <b>{{eInfo.unlinked}}</b> без зв’язку з планом</span>
-      · 🧩 компетентностей: <b>{{eInfo.comps}}</b>
-      · матриця: <b>{{eInfo.mxCols}}</b> колонок, <b>{{eInfo.mxCells}}</b> відміток
-      <span v-if="eInfo.noCode" style="color:#c62828"> · ⚠ без коду: {{eInfo.noCode}}</span>
-      <span v-if="eInfo.noSem" style="color:#b26a00"> · без семестру: {{eInfo.noSem}}</span>
-      <div style="margin-top:6px">
-        <button class="s" @click="eToComps('comp')">🧩 Компетенції</button>
-        <button class="s" @click="eToComps('matrix')">▦ Матриця «+»</button>
+    <div class="card">
+      <b>📊 Стан у БД</b>
+      <div class="chips">
+        <span class="chip" v-if="eInfo.cur">📋 план: <b>{{eInfo.count}}</b> позицій, <b>{{eInfo.ects}}</b> кредитів · імпорт {{fmt(eInfo.cur.imported_at)}} ({{eInfo.cur.source_file || '—'}})</span>
+        <span class="chip w" v-else>📋 плану ще немає — додайте позиції нижче або імпортуйте</span>
+        <span class="chip">🎓 потоків: <b>{{eInfo.linked}}</b> з планом</span>
+        <span class="chip w" v-if="eInfo.unlinked"><b>{{eInfo.unlinked}}</b> потоків без зв’язку з планом</span>
+        <span class="chip">🧩 компетентностей: <b>{{eInfo.comps}}</b></span>
+        <span class="chip">▦ матриця: <b>{{eInfo.mxCols}}</b> колонок, <b>{{eInfo.mxCells}}</b> відміток</span>
+        <span class="chip e" v-if="eInfo.noCode">⚠ без коду: {{eInfo.noCode}}</span>
+        <span class="chip w" v-if="eInfo.noSem">без семестру: {{eInfo.noSem}}</span>
       </div>
     </div>
 
@@ -886,8 +861,6 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
 <!-- Компетенції -->
 <section v-else-if="tab==='comp'">
 <h3>Компетенції версії ОП</h3>
-<select v-model="cv"><option value="">— оберіть версію ОП —</option>
-<option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option></select>
 <template v-if="cv">
 <div class="card form">
 <b>Додати компетенцію</b>
@@ -922,8 +895,6 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
 <section v-else-if="tab==='matrix'">
 <h3>Матриця відповідності: компетентності × дисципліни</h3>
 <small>Заповнюється для версії ОП за кодом дисципліни (ОК 1.1 тощо) — дисципліну в системі створювати не обов’язково. Коли дисципліна з таким кодом з’являється, її компетенції підтягуються з матриці автоматично; викладач потім може їх підправити у вкладці «Компетенції».</small>
-<select v-model="mv"><option value="">— оберіть версію ОП —</option>
-<option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions',v)}}</option></select>
 <template v-if="mv">
 <div class="card form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
 <input v-model="mcode" placeholder="Код дисципліни, напр. ОК 1.1" style="max-width:260px" @keyup.enter="addCol">
@@ -3781,7 +3752,8 @@ uOpt:{meta:true, plan:true, delMissing:false, addOppOnly:false, comps:true, updT
 ev:'', eMeta:null, eMeta0:'', eItems:[], eDel:[], eQ:'', eNoCode:false, eSort:'code', eOpen:{}, eBusy:false, CONTROLS, LEVELS,
 loadYear:new Date().getFullYear(), loadTeacher:null,
 impLoad:null, loadSkipNonDisc:true, loadOnlyMatched:false, loadSharedKey:true,
-statusYear:0, statusFilter:'',
+statusYear:0, statusFilter:'', npV:'', npLast:'', NPT:['program_versions','import','opp','comp','matrix','opptxt','checks','report'],
+  NPSTEPS:[['program_versions','Огляд'],['import','1. Імпорт'],['opp','2. План','plan'],['comp','3. Компетенції','comps'],['matrix','4. Матриця','cells'],['opptxt','5. Текст ОПП','texts'],['checks','6. Перевірка й експорт']],
 // v2: перевірки й звіт змін
 ckV:'', ckSev:'', rpA:'', rpB:'', OPPX:Object.freeze(OPPX), otV:'', otF:null, otDonor:'', otBusy:false, oppMissing:false, otWarn:[], clYear:'', clBusy:false, npBusy:false, npRem:false, npRep:null,
 
@@ -3789,16 +3761,9 @@ ckV:'', ckSev:'', rpA:'', rpB:'', OPPX:Object.freeze(OPPX), otV:'', otF:null, ot
   ['faculties','Факультети'],
   ['departments','Кафедри'],
   ['programs','Програми'],
-  ['program_versions','Версії ОП'],
-  ['opp','ОПП та НП'],
-  ['opptxt','Тексти ОПП'],
-  ['comp','Компетенції'],
-  ['matrix','Матриця'],
+  ['np','НП та ОПП'],
   ['disciplines','Дисципліни'],
   ['import','Імпорт'],
-  ['status','Стан ОП'],
-  ['checks','Перевірки ОП'],
-  ['report','Звіт змін'],
   ['assign','Призначення'],
   ['doc','Документ'],
   ['approvals','Затвердження'],
@@ -3991,6 +3956,7 @@ return cols.sort(this.msort==='code'?(a,b)=>a.rank-b.rank||nat(a,b):(a,b)=>a.sor
 matrixView(){const q=NC(this.mq);return this.matrixCols.filter(c=>(this.mpre===''||String(c.rank)===this.mpre)&&(!q||NC(this.colTitle(c)).includes(q)))},
 viewRows(){const t=this.tab;if(!T[t])return[];const fs=T[t].f,q=this.q.trim().toLowerCase();
 let a=this.rowsOf(t).filter(r=>fs.every(f=>this.cf[f.k]===undefined||this.cf[f.k]===null||String(r[f.k])===String(this.cf[f.k]))
+&&(t!=='program_versions'||this.verPass(r))
 &&(t!=='disciplines'||!this.cf.__teacher||(this.D.discipline_teachers||[]).some(x=>x.discipline_id===r.id&&x.user_id===this.cf.__teacher))
 &&(!q||fs.some(f=>String(this.show(r,f)??'').toLowerCase().includes(q))));
 const f=fs.find(x=>x.k===this.sk);
@@ -4083,6 +4049,11 @@ programSummary() {
   return out;
 },
 
+npStat() {
+  const v = this.npV; if (!v) return null;
+  const st = this.versionState[v]; if (!st) return null;
+  return { plan: st.plan ? st.plan.items_count : 0, comps: st.competencies.total, cells: st.matrix.cells, texts: this.npTexts(v) };
+},
 statusRows() {
   const rows = [];
   (this.D.program_versions || []).forEach(v => {
@@ -4358,7 +4329,7 @@ async pfSave(){const pf=this.pf,P=PER[pf.tab],iss=this.pfIssues;
    if(cur&&cur.faculty_id){const{error:ue}=await sb.from('departments').update({faculty_id:cur.faculty_id}).eq('id',eid);if(ue)throw ue}}
   this.D[pf.tab]=await all(pf.tab);this.applyPeriods();this.pf=null;this.notify('Збережено')}
  catch(e){this.err(e)}},
-go(t){this.tab=t;this.form=null;this.pf=null;this.resetView();if(t==='import'&&!this.isAdmin){this.impStep='load';this.loadOnlyMatched=true}},
+go(t){if(t==='np')t=this.npLast||'program_versions';if(this.NPT.includes(t)){this.npLast=t;if(!this.npV){try{const k=localStorage.getItem('npV');if(k&&(this.D.program_versions||[]).some(v=>v.id===k))this.npPick(k,true)}catch(_){}}}this.tab=t;this.form=null;this.pf=null;this.resetView();if(t==='import'&&!this.isAdmin){this.impStep='load';this.loadOnlyMatched=true}},
 prep(f){if(this.tab==='disciplines'){if(!f.id&&!f.department_id)f.department_id=this.profile.department_id||null;f.params=f.params||{};f.params.day=f.params.day||{};f.params.part=f.params.part||{};f.teachers=(this.D.discipline_teachers||[]).filter(x=>x.discipline_id===f.id).map(x=>x.user_id)}return f},
 edit(r){this.form=this.prep(JSON.parse(JSON.stringify(r)))},
 addNew(){this.form=this.prep({})},
@@ -4651,7 +4622,7 @@ const cols=(this.D.matrix_columns||[]).filter(c=>c.version_id===src.id).map(({id
 const cells=(this.D.matrix_cells||[]).filter(c=>c.version_id===src.id&&idMap[c.competency_id]).map(c=>({version_id:nv.id,code:c.code,competency_id:idMap[c.competency_id]}));await chunk('matrix_cells',cells);
 const tx=(this.D.opp_texts||[]).find(x=>x.version_id===src.id);
 if(tx){const{error}=await sb.from('opp_texts').insert({version_id:nv.id,data:OPPX.cloneData(tx.data),updated_by:this.session.user.id});if(error)throw error}
-await this.loadAll();this.ev=nv.id;this.eLoad();this.clYear='';
+await this.loadAll();this.npPick(nv.id,true);this.clYear='';
 this.notify('Створено версію ОП '+year+' (копія '+src.entry_year+')')}
 catch(e){if(nv){try{await sb.from('program_versions').delete().eq('id',nv.id)}catch(_){}}this.err(e);this.notify('Клонування скасовано, часткову копію видалено','err')}
 this.clBusy=false},
@@ -5188,7 +5159,35 @@ async eSave() {
     this.notify('Збережено');
   } catch (e) { this.err(e); } finally { this.eBusy = false; }
 },
-eToComps(tab) { this.mv = this.ev; this.cv = this.ev; this.go(tab); },
+eToComps(tab) { this.go(tab); },
+npPick(vid, force) {
+  if (!force && this.eDirty && !confirm('Є незбережені зміни в плані. Перейти до іншої версії без збереження?')) return false;
+  this.npV = vid || '';
+  try { localStorage.setItem('npV', this.npV); } catch (_) {}
+  this.ev = this.npV; this.eLoad();
+  this.otV = this.npV; this.otLoad();
+  this.cv = this.mv = this.ckV = this.rpB = this.npV; this.rpA = '';
+  if (!this.uOpp) { this.uVid = this.npV; this.uDonor = ''; }
+  return true;
+},
+npSel(e) { if (!this.npPick(e.target.value)) e.target.value = this.npV; },
+npOpen(r, t) { if (this.npPick(r.id)) this.go(t); },
+npGo(t) { if (t === 'import') { this.go('import'); this.impStep = 'opp'; } else this.go(t); },
+npStepOn(t) { return this.tab === t || (t === 'checks' && this.tab === 'report'); },
+npTexts(id) { return (this.D.opp_texts || []).some(x => x.version_id === id); },
+async cloneRow(r) {
+  if (!this.npPick(r.id)) return;
+  const y = prompt('Рік набору нової версії (копія ' + this.lab('program_versions', r) + '):', (r.entry_year || 0) + 1);
+  if (!y) return;
+  this.clYear = Number(y); await this.cloneVersion();
+},
+verPass(r) {
+  const v = r, plan = this.curriculumByVersion[v.id] || null, disc = this.disciplinesByVersion[v.id] || null;
+  if (this.statusYear && !(this.D.disciplines || []).some(d => d.version_id === v.id && this.studyYearOf(d) === this.statusYear)) return false;
+  let st = 'ready';
+  if (!plan) st = 'noplan'; else if (!disc || disc.count === 0) st = 'nodisc'; else if (disc.without_ci > 0) st = 'missing';
+  return !this.statusFilter || this.statusFilter === st;
+},
 
 // ---- Майстер імпорту: навантаження ----
 async impLoadFile(ev) {
