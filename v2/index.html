@@ -473,6 +473,7 @@ tr.eg td{border-top:2px solid #8a96ad}
       <option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions', v)}}</option>
     </select>
     <button class="s" v-if="ev" @click="go('import');impStep='opp';uVid=ev;uBuild()">⬆ Імпортувати файли для цієї версії</button>
+    <span v-if="ev" style="white-space:nowrap">· копія на рік <input type="number" v-model.number="clYear" :placeholder="(eMeta&&eMeta.entry_year?eMeta.entry_year+1:'')" style="width:80px"> <button class="s" @click="cloneVersion" :disabled="clBusy">⧉ Клонувати версію</button></span>
   </div>
 
   <template v-if="ev && eMeta">
@@ -3419,7 +3420,10 @@ function parseTexts(html,DP){
  const need=['institution','purpose','orientation','focus','features','employability','teaching','assessment','staff','material','info'];
  need.filter(k=>!data[k]).forEach(k=>W.push('Не знайдено: '+((OPPX_LABEL||{})[k]||k)));
  return{data,found:[...new Set(found)],warnings:W}}
-return{parseTexts,SECTIONS,FIELD_KEYS,DESC_GROUPS,parseDesc,blank,context,componentsXml,matrixXml,nrkXml,prnCompXml,lines}
+// Поля, що залежать від року затвердження — при клонуванні версії очищаються
+const YEAR_FIELDS=['council_protocol','council_changes','effective_date','order','order_changes','publish_year'];
+const cloneData=d=>{const o=JSON.parse(JSON.stringify(d||{}));YEAR_FIELDS.forEach(k=>{if(k in o)o[k]=''});return o};
+return{cloneData,YEAR_FIELDS,parseTexts,SECTIONS,FIELD_KEYS,DESC_GROUPS,parseDesc,blank,context,componentsXml,matrixXml,nrkXml,prnCompXml,lines}
 })();
 // ===== V2-OPP END =====
 
@@ -3498,7 +3502,7 @@ loadYear:new Date().getFullYear(), loadTeacher:null,
 impLoad:null, loadSkipNonDisc:true, loadOnlyMatched:false, loadSharedKey:true,
 statusYear:0, statusFilter:'',
 // v2: перевірки й звіт змін
-ckV:'', ckSev:'', rpA:'', rpB:'', OPPX:Object.freeze(OPPX), otV:'', otF:null, otDonor:'', otBusy:false, oppMissing:false, otWarn:[],
+ckV:'', ckSev:'', rpA:'', rpB:'', OPPX:Object.freeze(OPPX), otV:'', otF:null, otDonor:'', otBusy:false, oppMissing:false, otWarn:[], clYear:'', clBusy:false,
 
   tabs:[
   ['faculties','Факультети'],
@@ -4331,6 +4335,28 @@ OPPX.FIELD_KEYS.forEach(k=>{if(d[k]==null)d[k]=''});this.otF=this.otV?d:null;thi
 async otSave(){if(!this.otV||!this.otF)return;this.otBusy=true;
 try{const{error}=await sb.from('opp_texts').upsert({version_id:this.otV,data:this.otF,updated_by:this.session.user.id});if(error)throw error;
 this.D.opp_texts=await all('opp_texts');this.notify('Збережено')}catch(e){this.err(e)}this.otBusy=false},
+async cloneVersion(){const src=(this.D.program_versions||[]).find(v=>v.id===this.ev);if(!src)return;
+const year=Number(this.clYear||src.entry_year+1);
+if(!Number.isInteger(year)||year<2000||year>2100)return this.notify('Вкажіть рік набору','err');
+if((this.D.program_versions||[]).some(v=>v.program_id===src.program_id&&v.entry_year===year))return this.notify('Версія ОП за '+year+' рік уже існує','err');
+if(!confirm('Створити версію ОП за '+year+' рік як копію '+this.lab('program_versions',src)+'?\nКопіюються: навчальний план, компетентності, матриця, тексти ОПП. Не копіюються: дисципліни (потоки), документи, затвердження.'))return;
+this.clBusy=true;let nv=null;
+try{const chunk=async(t,rows)=>{for(let i=0;i<rows.length;i+=400){const{error}=await sb.from(t).insert(rows.slice(i,i+400));if(error)throw error}};
+const r0=await sb.from('program_versions').insert({program_id:src.program_id,entry_year:year}).select().single();if(r0.error)throw r0.error;nv=r0.data;
+const cur=(this.D.curricula||[]).find(c=>c.version_id===src.id);
+if(cur){const{id,...rest}=cur;const r=await sb.from('curricula').insert({...rest,version_id:nv.id,source_file:(cur.source_file||'')+' (копія з '+src.entry_year+')',imported_at:new Date().toISOString(),imported_by:this.session.user.id}).select().single();if(r.error)throw r.error;
+const items=(this.D.curriculum_items||[]).filter(i=>i.curriculum_id===cur.id).map(({id,curriculum_id,...x})=>({...x,curriculum_id:r.data.id}));await chunk('curriculum_items',items)}
+const comps=(this.D.competencies||[]).filter(c=>c.version_id===src.id);const idMap={};
+if(comps.length){const r=await sb.from('competencies').insert(comps.map(({id,version_id,...x})=>({...x,version_id:nv.id}))).select();if(r.error)throw r.error;
+const byCode=new Map(r.data.map(x=>[x.code,x.id]));comps.forEach(c=>{idMap[c.id]=byCode.get(c.code)})}
+const cols=(this.D.matrix_columns||[]).filter(c=>c.version_id===src.id).map(({id,version_id,...x})=>({...x,version_id:nv.id}));await chunk('matrix_columns',cols);
+const cells=(this.D.matrix_cells||[]).filter(c=>c.version_id===src.id&&idMap[c.competency_id]).map(c=>({version_id:nv.id,code:c.code,competency_id:idMap[c.competency_id]}));await chunk('matrix_cells',cells);
+const tx=(this.D.opp_texts||[]).find(x=>x.version_id===src.id);
+if(tx){const{error}=await sb.from('opp_texts').insert({version_id:nv.id,data:OPPX.cloneData(tx.data),updated_by:this.session.user.id});if(error)throw error}
+await this.loadAll();this.ev=nv.id;this.eLoad();this.clYear='';
+this.notify('Створено версію ОП '+year+' (копія '+src.entry_year+')')}
+catch(e){if(nv){try{await sb.from('program_versions').delete().eq('id',nv.id)}catch(_){}}this.err(e);this.notify('Клонування скасовано, часткову копію видалено','err')}
+this.clBusy=false},
 async otImport(ev){const f=ev.target.files[0];ev.target.value='';if(!f||!this.otF)return;
 if(!/\.docx$/i.test(f.name))return this.notify('Потрібен файл .docx (старі .doc збережіть у Word як .docx)','err');
 try{const{value:html}=await mammoth.convertToHtml({arrayBuffer:await f.arrayBuffer()});const r=OPPX.parseTexts(html,DOMParser);
