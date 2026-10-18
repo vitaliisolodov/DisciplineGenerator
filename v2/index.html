@@ -165,13 +165,18 @@ table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
 
 /* ===== UI-KIT 3 ===== */
 .acts{gap:0}
-main button.act-b,.card button.act-b{min-width:32px;padding:0 8px;font-size:15px}
+main button.act-b,.card button.act-b,main button.ed-b,.card button.ed-b,main button.del-b,.card button.del-b{box-sizing:border-box;width:32px;min-width:32px;height:32px;padding:0;font-size:15px;line-height:1;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle}
+/* колонка дій займає рівно стільки, скільки треба кнопкам; решта місця йде іншим стовпчикам */
+td:has(>.acts){width:1%;white-space:nowrap}
+table.dsc td.cb{text-align:center;padding-left:6px;padding-right:6px}
+table.dsc td.cb label{display:flex;justify-content:center;align-items:center;margin:0;min-height:32px;cursor:pointer}
+table.dsc td.cb input{margin:0}
+table.dsc th.cbh{text-align:center;white-space:nowrap}
 .in32{height:32px;vertical-align:middle}
 table.apv td{vertical-align:middle}
 table.apv input:not([type=checkbox]){height:32px;width:100%;margin:0}
 table.apv td>input[type=checkbox]{display:block;width:22px;height:22px;margin:0}
 table.dsc td.cb{white-space:nowrap;font-size:13px}
-table.dsc td.cb input{margin-right:4px}
 </style>
 </head>
 <body>
@@ -424,7 +429,7 @@ table.dsc td.cb input{margin-right:4px}
 <button class="s" v-if="q||sk||Object.values(cf).some(Boolean)" @click="resetView">Скинути фільтри</button>
 </div>
 <table :class="{dsc:tab==='disciplines'}">
-<tr><th v-for="f in T[tab].f.filter(x=>!x.noCol)" :key="f.k" class="sortable" :style="f.w?{width:f.w+'px'}:null" :title="(f.sl?f.l+'. ':'')+(hint(f)?hint(f)+' — ':'')+'натисніть, щоб сортувати'" @click="sortBy(f)">{{f.sl||f.l}} <span style="color:#889">{{sk===f.k?(sd>0?'▲':'▼'):'⇅'}}</span></th><th v-if="tab==='programs'">Гарант / керівник ОП</th><th v-if="tab==='programs'">Стан</th><th v-if="tab==='program_versions'">План</th><th v-if="tab==='program_versions'">Компетентності, матриця, текст</th><th v-if="tab==='program_versions'">Потоки</th><th v-if="tab==='disciplines'" class="sortable" @click="sortBy({k:'__teacher'})">Викладачі <span style="color:#889">{{sk==='__teacher'?(sd>0?'▲':'▼'):'⇅'}}</span></th><th v-if="tab==='disciplines'&&!isAdmin" title="Коли ви завантажили файл, перевірили його і все гаразд — поставте позначку. Її бачить адміністратор (для статистики).">РПНД готовий</th><th v-if="tab==='disciplines'&&!isAdmin" title="Позначка бачить адміністратор (для статистики)">Силабус готовий</th><th></th></tr>
+<tr><th v-for="f in T[tab].f.filter(x=>!x.noCol)" :key="f.k" class="sortable" :style="f.w?{width:f.w+'px'}:null" :title="(f.sl?f.l+'. ':'')+(hint(f)?hint(f)+' — ':'')+'натисніть, щоб сортувати'" @click="sortBy(f)">{{f.sl||f.l}} <span style="color:#889">{{sk===f.k?(sd>0?'▲':'▼'):'⇅'}}</span></th><th v-if="tab==='programs'">Гарант / керівник ОП</th><th v-if="tab==='programs'">Стан</th><th v-if="tab==='program_versions'">План</th><th v-if="tab==='program_versions'">Компетентності, матриця, текст</th><th v-if="tab==='program_versions'">Потоки</th><th v-if="tab==='disciplines'" class="sortable" @click="sortBy({k:'__teacher'})">Викладачі <span style="color:#889">{{sk==='__teacher'?(sd>0?'▲':'▼'):'⇅'}}</span></th><th v-if="tab==='disciplines'&&!isAdmin" class="cbh" title="РПНД готовий: коли ви завантажили файл, перевірили його і все гаразд — поставте позначку. Її бачить адміністратор (для статистики).">РПНД</th><th v-if="tab==='disciplines'&&!isAdmin" class="cbh" title="Силабус готовий: позначку бачить адміністратор (для статистики)">Силабус</th><th></th></tr>
 <tr class="flt" v-if="T[tab].f.some(f=>f.ref||f.opts)||tab==='disciplines'"><td v-for="f in T[tab].f.filter(x=>!x.noCol)" :key="f.k">
 <select v-if="f.ref||f.opts" v-model="cf[f.k]"><option :value="undefined">Усі</option><option v-for="o in opts(f)" :key="o.id" :value="o.id">{{o.l}}</option></select></td><td v-if="tab==='programs'"></td><td v-if="tab==='programs'"></td><td v-if="tab==='program_versions'"></td><td v-if="tab==='program_versions'"></td><td v-if="tab==='program_versions'"></td><td v-if="tab==='disciplines'">
 <select v-model="cf.__teacher"><option :value="undefined">Усі викладачі</option><option v-for="p in teacherOpts" :key="p.id" :value="p.id">{{lab('profiles',p)}}</option></select></td><td v-if="tab==='disciplines'&&!isAdmin" colspan="2"></td><td></td></tr>
@@ -436,7 +441,7 @@ table.dsc td.cb input{margin-right:4px}
     <button class="s" @click="pfOpen('programs',r.id)">✎ за роками</button>
   </td>
   <td v-if="tab==='disciplines'"><span v-if="teachersOf(r)">{{teachersOf(r)}}</span><span v-else style="color:#c62828">не призначено</span></td>
-  <td v-for="col in ['rpnd_done_at','syllabus_done_at']" :key="col" v-if="tab==='disciplines'&&!isAdmin" class="cb"><label><input type="checkbox" :checked="!!flag(r,col)" @change="flagChange($event,r,col)">{{flag(r,col)?fmt(flag(r,col)):''}}</label></td>
+  <td v-for="col in ['rpnd_done_at','syllabus_done_at']" :key="col" v-if="tab==='disciplines'&&!isAdmin" class="cb" :title="(col==='rpnd_done_at'?'РПНД':'Силабус')+(flag(r,col)?' готовий: '+fmt(flag(r,col)):' ще не позначено як готовий')"><label><input type="checkbox" :checked="!!flag(r,col)" @change="flagChange($event,r,col)"></label></td>
 
   <!-- Стан ОП: компактно, в окремих колонках -->
   <td v-if="tab==='program_versions'" style="font-size:13px;white-space:nowrap">
@@ -463,7 +468,7 @@ table.dsc td.cb input{margin-right:4px}
   <td><div class="acts"><button v-if="tab==='disciplines'" class="s act-b" title="Призначення: викладачі й компетенції цієї дисципліни" @click="ad=r.id;go('assign')">🧩</button>
 <button v-if="tab==='disciplines'" class="s dst" :class="'dst-'+(docStat[r.id]||{}).level" :title="docTip(r)" @click="openDoc(r)">▤</button>
 <button v-if="tab==='program_versions'" class="s" title="Відкрити версію ОП: план, компетенції, матриця, текст" @click="npOpen(r,'opp')">Відкрити ➜</button>
-<button v-if="tab==='program_versions'" class="s" title="Створити копію цієї версії на інший рік набору" @click="cloneRow(r)">⧉</button>
+<button v-if="tab==='program_versions'" class="s act-b" title="Створити копію цієї версії на інший рік набору" @click="cloneRow(r)">⧉</button>
 <button v-if="tab!=='program_versions'" class="s ed-b" title="Редагувати" @click="edit(r)">✎</button>
 <button class="s del-b" :title="tab==='disciplines'&&!isAdmin?(teachersCount(r)>1?'Зняти себе з дисципліни':'Видалити дисципліну'):'Видалити'" v-if="!T[tab].noDel&&(isAdmin||tab==='disciplines')" @click="tab==='disciplines'&&!isAdmin?delMine(r):del(r)">✕</button></div></td>
 </tr>
@@ -3738,6 +3743,7 @@ const RELEASES=[
   '«Стан ОП» об’єднано з оглядом версій ОП: у таблиці видно план, компетентності, матрицю, текст ОПП і потоки, є фільтри за навчальним роком і станом, а також кнопки «Відкрити» та «⧉» (копія на новий рік).',
   'Єдина висота кнопок; основні кнопки («Зберегти», «Завантажити», «⬇ НП», «⬇ ОПП») мають помітну заливку; кнопки вибору файлу в «Шаблонах», «Моєму підписі» й підписах користувачів у загальному стилі; оформлено галочки; виправлено відступи кнопок.',
   'У таблиці «Дисципліни» з’явилась кнопка 🧩: відкриває «Призначення» саме цієї дисципліни.',
+  'Кнопки дій (✎, ✕, 🧩, ⧉ тощо) мають однаковий розмір 32×32 і символ по центру; стовпчик дій займає лише потрібне місце. Позначки «РПНД» і «Силабус» у таблиці «Дисципліни» — по центру, без слова «готовий» (дата й пояснення у підказці).',
   'У таблиці «Дисципліни» позначки «РПНД готовий» і «Силабус готовий» (для викладача) тепер стовпчики самої таблиці, а не окремий список внизу; стовпчик «Мова» не показується, «Кредити ЄКТС» і «Форма контролю» вужчі, «Назва» ширша.',
   'Кнопка переходу в «Призначення» (🧩) має однакову ширину з іншими кнопками дій; у «Призначенні» є кнопка «← до списку дисциплін»; менші відступи між кнопками дій; галочки дозволу підписів у «Затвердженнях» більші й вирівняні по центру рядка.',
   'Кроки «План» і «Компетенції»: кнопки ▼, ↑, ↓, ✕ та «Додати» семестр мають єдині висоту й стиль; на кроці 6 кнопки експорту стоять в один ряд.',
