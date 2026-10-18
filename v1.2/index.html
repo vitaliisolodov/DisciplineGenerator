@@ -122,6 +122,27 @@ table.cmp td.ac{width:132px;white-space:nowrap}
 .cmp-add textarea{field-sizing:content;min-height:60px}
 .cmp-add .full{grid-column:1/-1}
 pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px solid #dde;border-radius:6px;padding:12px;font:13px/1.5 ui-monospace,Consolas,monospace;margin-top:10px}
+
+/* ===== UI-KIT 2: однакова висота кнопок, видимі основні кнопки, файлові поля, галочки ===== */
+main button,.card button,label.fb,.fpick .b{box-sizing:border-box;min-height:32px;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:14px;line-height:1.2;vertical-align:middle}
+main button,.card button{padding:0 12px}
+main button.s,.card button.s{padding:0 10px}
+main button.p,.card button.p{background:#1f3a5f;color:#fff;border:1px solid #1f3a5f;padding:0 14px}
+main button.p:hover:not(:disabled),.card button.p:hover:not(:disabled){background:#2a4d7c;border-color:#2a4d7c;color:#fff}
+main button.p:disabled,.card button.p:disabled{opacity:.55}
+main button.ed-b,main button.del-b,main button.dst,.card button.ed-b,.card button.del-b,.card button.dst{min-width:32px;padding:0 8px;font-size:15px}
+main .mx .xdel{min-height:0;display:inline;font-size:11px;padding:0 0 3px;border:0;background:none}
+main .mx .xdel:hover:not(:disabled){background:none;border:0}
+table.ed button{min-height:26px;padding:0 8px}
+.fpick .b{padding:0 14px;border-radius:4px}
+main select,.card select{vertical-align:middle}
+.tb select,.tb input:not([type=checkbox]):not([type=radio]):not([type=file]),p>select{height:32px}
+p>button,p>select,p>label.fb{margin-left:8px}
+td button+button,td button+label.fb{margin-left:6px}
+h3>button{margin-left:10px;vertical-align:middle}
+input[type=checkbox]{accent-color:#1f3a5f;width:17px;height:17px;cursor:pointer;vertical-align:middle}
+table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
+.fpick.inl{display:inline-flex;vertical-align:middle;margin:0 6px!important}
 </style>
 </head>
 <body>
@@ -179,7 +200,7 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
 <template v-if="p.id">
 <div v-for="sg in PER[pf.tab].sigs" :key="sg[0]" style="margin:6px 0">
 <b>{{sg[1]}}:</b> {{sigs[sg[0]+'/'+p.id+'.png']?'✔ завантажено':(sigs[sg[0]+'/'+pf.entityId+'.png']?'✔ старий підпис установи (діє, поки немає свого)':'— немає')}}
-<input type="file" accept="image/*" @change="uploadSig(sg[0],p.id,$event)" style="display:inline;width:auto">
+<label class="fpick inl"><input type="file" accept="image/*" @change="uploadSig(sg[0],p.id,$event)"><span class="b">Оберіть файл</span></label>
 <template v-if="sigs[sg[0]+'/'+p.id+'.png']"><button class="s" @click="showSig(sg[0],p.id)">Показати</button> <button class="s" @click="delSig(sg[0],p.id)">Видалити</button></template>
 <div v-if="sigUrl[sg[0]+'/'+p.id+'.png']"><img :src="sigUrl[sg[0]+'/'+p.id+'.png']" class="sigprev"></div>
 </div>
@@ -250,7 +271,8 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
       <small style="display:inline;color:#667">· позицій {{programSummary[r.id].total_plan_items}} · потоків {{programSummary[r.id].total_disciplines}}</small></template>
   </td>
 
-  <td><div class="acts"><button v-if="tab==='disciplines'" class="s dst" :class="'dst-'+(docStat[r.id]||{}).level" :title="docTip(r)" @click="openDoc(r)">▤</button>
+  <td><div class="acts"><button v-if="tab==='disciplines'" class="s" title="Призначення: викладачі й компетенції цієї дисципліни" @click="ad=r.id;go('assign')">👥</button>
+<button v-if="tab==='disciplines'" class="s dst" :class="'dst-'+(docStat[r.id]||{}).level" :title="docTip(r)" @click="openDoc(r)">▤</button>
 <button class="s ed-b" title="Редагувати" @click="edit(r)">✎</button>
 <button class="s del-b" :title="tab==='disciplines'&&!isAdmin?(teachersCount(r)>1?'Зняти себе з дисципліни':'Видалити дисципліну'):'Видалити'" v-if="!T[tab].noDel&&(isAdmin||tab==='disciplines')" @click="tab==='disciplines'&&!isAdmin?delMine(r):del(r)">✕</button></div></td>
 </tr>
@@ -289,7 +311,7 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
 <small>Фото підпису на білому аркуші або PNG. Тло прибирається автоматично. Файли зберігаються в закритому сховищі й підставляються в документ лише після дозволу у вкладці «Затвердження».</small>
 <div v-for="sg in T[tab].sigs" :key="sg[0]" style="margin:8px 0">
 <b>{{sg[1]}}:</b> {{sigs[sg[0]+'/'+form.id+'.png']?'✔ завантажено':'— немає'}}
-<input type="file" accept="image/*" @change="uploadSig(sg[0],form.id,$event)" style="display:inline;width:auto">
+<label class="fpick inl"><input type="file" accept="image/*" @change="uploadSig(sg[0],form.id,$event)"><span class="b">Оберіть файл</span></label>
 <template v-if="sigs[sg[0]+'/'+form.id+'.png']"><button class="s" @click="showSig(sg[0],form.id)">Показати</button> <button class="s" @click="delSig(sg[0],form.id)">Видалити</button></template>
 <div v-if="sigUrl[sg[0]+'/'+form.id+'.png']"><img :src="sigUrl[sg[0]+'/'+form.id+'.png']" class="sigprev"></div>
 </div>
@@ -1000,7 +1022,7 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
 <h3>Мій підпис</h3>
 <small>Завантажте фото підпису на білому аркуші (або PNG із прозорим тлом) — тло буде прибрано автоматично. Підпис зберігається в закритому сховищі й підставляється у ваші документи та документи співавторів.</small>
 <p>Стан: <b>{{sigs['profile/'+session.user.id+'.png']?'✔ завантажено':'— немає'}}</b></p>
-<p><input type="file" accept="image/*" @change="uploadSig('profile',session.user.id,$event)"></p>
+<p><label class="fpick"><input type="file" accept="image/*" @change="uploadSig('profile',session.user.id,$event)"><span class="b">Оберіть файл</span></label></p>
 <p v-if="sigs['profile/'+session.user.id+'.png']"><button class="s" @click="showSig('profile',session.user.id)">Показати</button> <button class="s" @click="delSig('profile',session.user.id)">Видалити</button></p>
 <div v-if="sigUrl['profile/'+session.user.id+'.png']"><img :src="sigUrl['profile/'+session.user.id+'.png']" class="sigprev"></div>
 </section>
@@ -1011,15 +1033,15 @@ pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px
 <small>Файли зберігаються в закритому сховищі й доступні лише після входу в систему. Перед завантаженням перевіряється, що теги в подвійних фігурних дужках записані коректно. Новий файл замінює попередній.</small>
 <table><tr><th>Документ</th><th>Стан</th><th>Завантажити файл (.docx)</th></tr>
 <tr v-for="k in TPLS" :key="k[0]"><td>{{k[1]}}</td><td>{{tpl[k[0]]?'✔ завантажено '+fmt(tpl[k[0]]):'— немає'}}</td>
-<td><input type="file" accept=".docx" @change="uploadTpl(k[0],$event)"></td></tr></table>
+<td><label class="fpick"><input type="file" accept=".docx" @change="uploadTpl(k[0],$event)"><span class="b">Оберіть файл</span></label></td></tr></table>
 </section>
 
 <!-- Затвердження -->
 <section v-else-if="tab==='approvals'">
 <h3>Дати й протоколи затвердження</h3>
 <small>Показано факультети й кафедри, що діють у вибраному році (за періодами), з назвами за цей рік. Спільні для всіх РПНД факультету й кафедри за обраний рік. Рік також підставляється в рядок «Харків – РРРР р.».</small>
-<p>Рік: <select v-model.number="ay"><option v-for="y in YEARS" :key="y" :value="y">{{y}}</option></select>
-<button class="s" @click="copyPrev">Скопіювати з {{ay-1}} року</button></p>
+<div class="tb"><label>Рік: <select v-model.number="ay"><option v-for="y in YEARS" :key="y" :value="y">{{y}}</option></select></label>
+<button class="s" @click="copyPrev">Скопіювати з {{ay-1}} року</button></div>
 <h3>Факультети</h3>
 <table><tr><th>Факультет</th><th v-for="c in APF" :key="c[0]">{{c[1]}}</th></tr>
 <tr v-for="f in actEnts('faculties')" :key="f.id"><td>{{entAt('faculties',f.id,ay).name}}</td>
@@ -2904,7 +2926,9 @@ const RELEASES=[
  ]],
  ['Для всіх користувачів',[
   'Єдиний вигляд кнопок, блоків і списків: списки вибору більше не обрізають текст, у «Компетенціях» поля стали ширшими й підлаштовуються під текст, форма «Додати компетенцію» вирівняна зі сторінкою.',
-  'Вибір навчального року в шапці тепер береться з потоків дисциплін (колонка року), тому з’являється одразу після імпорту навантаження.',
+  'Вибір навчального року в шапці береться з потоків дисциплін (колонка року), тому з’являється одразу після імпорту навантаження.',
+  'Єдина висота кнопок; основні кнопки («Зберегти», «Завантажити» тощо) мають помітну заливку; кнопки вибору файлу в «Шаблонах», «Моєму підписі» й підписах користувачів українською й у загальному стилі; оформлено галочки; виправлено відступи кнопок у «Затвердженнях», «Статистиці» та «Документі».',
+  'У таблиці «Дисципліни» з’явилась кнопка 👥: відкриває «Призначення» саме цієї дисципліни.',
  ]],
  ['Додатково для адміністратора',[
   ['«ОПП та НП»: навчальний план можна впорядкувати за кодом — спершу ОК, потім ВК, потім позиції без коду; порядок у самому плані не змінюється.','a'],

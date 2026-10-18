@@ -142,6 +142,27 @@ label.fb{display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0;
 label.fb:hover{background:#eef1f6;border-color:#98a4b8}
 label.fb input{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
 tr.sel td{background:#eaf2ff}
+
+/* ===== UI-KIT 2: однакова висота кнопок, видимі основні кнопки, файлові поля, галочки ===== */
+main button,.card button,label.fb,.fpick .b{box-sizing:border-box;min-height:32px;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:14px;line-height:1.2;vertical-align:middle}
+main button,.card button{padding:0 12px}
+main button.s,.card button.s{padding:0 10px}
+main button.p,.card button.p{background:#1f3a5f;color:#fff;border:1px solid #1f3a5f;padding:0 14px}
+main button.p:hover:not(:disabled),.card button.p:hover:not(:disabled){background:#2a4d7c;border-color:#2a4d7c;color:#fff}
+main button.p:disabled,.card button.p:disabled{opacity:.55}
+main button.ed-b,main button.del-b,main button.dst,.card button.ed-b,.card button.del-b,.card button.dst{min-width:32px;padding:0 8px;font-size:15px}
+main .mx .xdel{min-height:0;display:inline;font-size:11px;padding:0 0 3px;border:0;background:none}
+main .mx .xdel:hover:not(:disabled){background:none;border:0}
+table.ed button{min-height:26px;padding:0 8px}
+.fpick .b{padding:0 14px;border-radius:4px}
+main select,.card select{vertical-align:middle}
+.tb select,.tb input:not([type=checkbox]):not([type=radio]):not([type=file]),p>select{height:32px}
+p>button,p>select,p>label.fb{margin-left:8px}
+td button+button,td button+label.fb{margin-left:6px}
+h3>button{margin-left:10px;vertical-align:middle}
+input[type=checkbox]{accent-color:#1f3a5f;width:17px;height:17px;cursor:pointer;vertical-align:middle}
+table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
+.fpick.inl{display:inline-flex;vertical-align:middle;margin:0 6px!important}
 </style>
 </head>
 <body>
@@ -218,7 +239,7 @@ tr.sel td{background:#eaf2ff}
 <template v-if="p.id">
 <div v-for="sg in PER[pf.tab].sigs" :key="sg[0]" style="margin:6px 0">
 <b>{{sg[1]}}:</b> {{sigs[sg[0]+'/'+p.id+'.png']?'✔ завантажено':(sigs[sg[0]+'/'+pf.entityId+'.png']?'✔ старий підпис установи (діє, поки немає свого)':'— немає')}}
-<input type="file" accept="image/*" @change="uploadSig(sg[0],p.id,$event)" style="display:inline;width:auto">
+<label class="fpick inl"><input type="file" accept="image/*" @change="uploadSig(sg[0],p.id,$event)"><span class="b">Оберіть файл</span></label>
 <template v-if="sigs[sg[0]+'/'+p.id+'.png']"><button class="s" @click="showSig(sg[0],p.id)">Показати</button> <button class="s" @click="delSig(sg[0],p.id)">Видалити</button></template>
 <div v-if="sigUrl[sg[0]+'/'+p.id+'.png']"><img :src="sigUrl[sg[0]+'/'+p.id+'.png']" class="sigprev"></div>
 </div>
@@ -429,7 +450,8 @@ tr.sel td{background:#eaf2ff}
       <small style="display:inline;color:#667">· позицій {{programSummary[r.id].total_plan_items}} · потоків {{programSummary[r.id].total_disciplines}}</small></template>
   </td>
 
-  <td><div class="acts"><button v-if="tab==='disciplines'" class="s dst" :class="'dst-'+(docStat[r.id]||{}).level" :title="docTip(r)" @click="openDoc(r)">▤</button>
+  <td><div class="acts"><button v-if="tab==='disciplines'" class="s" title="Призначення: викладачі й компетенції цієї дисципліни" @click="ad=r.id;go('assign')">👥</button>
+<button v-if="tab==='disciplines'" class="s dst" :class="'dst-'+(docStat[r.id]||{}).level" :title="docTip(r)" @click="openDoc(r)">▤</button>
 <button v-if="tab==='program_versions'" class="s" title="Відкрити версію ОП: план, компетенції, матриця, текст" @click="npOpen(r,'opp')">Відкрити ➜</button>
 <button v-if="tab==='program_versions'" class="s" title="Створити копію цієї версії на інший рік набору" @click="cloneRow(r)">⧉</button>
 <button v-if="tab!=='program_versions'" class="s ed-b" title="Редагувати" @click="edit(r)">✎</button>
@@ -470,7 +492,7 @@ tr.sel td{background:#eaf2ff}
 <small>Фото підпису на білому аркуші або PNG. Тло прибирається автоматично. Файли зберігаються в закритому сховищі й підставляються в документ лише після дозволу у вкладці «Затвердження».</small>
 <div v-for="sg in T[tab].sigs" :key="sg[0]" style="margin:8px 0">
 <b>{{sg[1]}}:</b> {{sigs[sg[0]+'/'+form.id+'.png']?'✔ завантажено':'— немає'}}
-<input type="file" accept="image/*" @change="uploadSig(sg[0],form.id,$event)" style="display:inline;width:auto">
+<label class="fpick inl"><input type="file" accept="image/*" @change="uploadSig(sg[0],form.id,$event)"><span class="b">Оберіть файл</span></label>
 <template v-if="sigs[sg[0]+'/'+form.id+'.png']"><button class="s" @click="showSig(sg[0],form.id)">Показати</button> <button class="s" @click="delSig(sg[0],form.id)">Видалити</button></template>
 <div v-if="sigUrl[sg[0]+'/'+form.id+'.png']"><img :src="sigUrl[sg[0]+'/'+form.id+'.png']" class="sigprev"></div>
 </div>
@@ -1103,7 +1125,7 @@ tr.sel td{background:#eaf2ff}
 <h3>Мій підпис</h3>
 <small>Завантажте фото підпису на білому аркуші (або PNG із прозорим тлом) — тло буде прибрано автоматично. Підпис зберігається в закритому сховищі й підставляється у ваші документи та документи співавторів.</small>
 <p>Стан: <b>{{sigs['profile/'+session.user.id+'.png']?'✔ завантажено':'— немає'}}</b></p>
-<p><input type="file" accept="image/*" @change="uploadSig('profile',session.user.id,$event)"></p>
+<p><label class="fpick"><input type="file" accept="image/*" @change="uploadSig('profile',session.user.id,$event)"><span class="b">Оберіть файл</span></label></p>
 <p v-if="sigs['profile/'+session.user.id+'.png']"><button class="s" @click="showSig('profile',session.user.id)">Показати</button> <button class="s" @click="delSig('profile',session.user.id)">Видалити</button></p>
 <div v-if="sigUrl['profile/'+session.user.id+'.png']"><img :src="sigUrl['profile/'+session.user.id+'.png']" class="sigprev"></div>
 </section>
@@ -1114,15 +1136,15 @@ tr.sel td{background:#eaf2ff}
 <small>Файли зберігаються в закритому сховищі й доступні лише після входу в систему. Перед завантаженням перевіряється, що теги в подвійних фігурних дужках записані коректно. Новий файл замінює попередній.</small>
 <table><tr><th>Документ</th><th>Стан</th><th>Завантажити файл</th></tr>
 <tr v-for="k in TPLS" :key="k[0]"><td>{{k[1]}}</td><td>{{tpl[k[0]]?'✔ завантажено '+fmt(tpl[k[0]]):'— немає'}}</td>
-<td><input type="file" :accept="k[0].startsWith('np')?'.xlsx':'.docx'" @change="uploadTpl(k[0],$event)"></td></tr></table>
+<td><label class="fpick"><input type="file" :accept="k[0].startsWith('np')?'.xlsx':'.docx'" @change="uploadTpl(k[0],$event)"><span class="b">Оберіть файл</span></label></td></tr></table>
 </section>
 
 <!-- Затвердження -->
 <section v-else-if="tab==='approvals'">
 <h3>Дати й протоколи затвердження</h3>
 <small>Показано факультети й кафедри, що діють у вибраному році (за періодами), з назвами за цей рік. Спільні для всіх РПНД факультету й кафедри за обраний рік. Рік також підставляється в рядок «Харків – РРРР р.».</small>
-<p>Рік: <select v-model.number="ay"><option v-for="y in YEARS" :key="y" :value="y">{{y}}</option></select>
-<button class="s" @click="copyPrev">Скопіювати з {{ay-1}} року</button></p>
+<div class="tb"><label>Рік: <select v-model.number="ay"><option v-for="y in YEARS" :key="y" :value="y">{{y}}</option></select></label>
+<button class="s" @click="copyPrev">Скопіювати з {{ay-1}} року</button></div>
 <h3>Факультети</h3>
 <table><tr><th>Факультет</th><th v-for="c in APF" :key="c[0]">{{c[1]}}</th></tr>
 <tr v-for="f in actEnts('faculties')" :key="f.id"><td>{{entAt('faculties',f.id,ay).name}}</td>
@@ -3711,6 +3733,9 @@ const RELEASES=[
   'Єдиний вигляд кнопок, блоків і списків у всіх вкладках; навчальний план у «ОПП та НП» можна впорядкувати за кодом (ОК, ВК, без коду); у «Компетенціях» ширші поля, вибір навчального року в шапці береться з потоків дисциплін.',
   'Нова вкладка «НП та ОПП» об’єднує всю роботу над ОПП і НП: спільний вибір версії ОП та кроки «Огляд → 1. Імпорт → 2. План → 3. Компетенції → 4. Матриця → 5. Текст ОПП → 6. Перевірка й експорт». Експорт НП і ОПП, перевірки та звіт змін — на кроці 6.',
   '«Стан ОП» об’єднано з оглядом версій ОП: у таблиці видно план, компетентності, матрицю, текст ОПП і потоки, є фільтри за навчальним роком і станом, а також кнопки «Відкрити» та «⧉» (копія на новий рік).',
+  'Єдина висота кнопок; основні кнопки («Зберегти», «Завантажити», «⬇ НП», «⬇ ОПП») мають помітну заливку; кнопки вибору файлу в «Шаблонах», «Моєму підписі» й підписах користувачів у загальному стилі; оформлено галочки; виправлено відступи кнопок.',
+  'У таблиці «Дисципліни» з’явилась кнопка 👥: відкриває «Призначення» саме цієї дисципліни.',
+  'Копіювання версії ОП: при помилці показується крок і причина, а повністю створена копія більше не видаляється через збій оновлення екрана.',
   'Імпорт ОПП: якщо такої ОПП (або її версії на цей рік) ще немає в базі, замість оновлення даних програми пропонується створити нову ОПП / версію ОП. Якщо вибрана вгорі версія не збігається з файлом, програма запитає, куди імпортувати.',
   'Імпорт ОПП (.docx) тепер заодно записує тексти ОПП (профіль, затвердження, проєктна група, дескриптори НРК); у кроці «5. Текст ОПП» їх можна перевірити й за потреби імпортувати повторно.',
  ]],
@@ -4656,22 +4681,22 @@ const year=Number(this.clYear||src.entry_year+1);
 if(!Number.isInteger(year)||year<2000||year>2100)return this.notify('Вкажіть рік набору','err');
 if((this.D.program_versions||[]).some(v=>v.program_id===src.program_id&&v.entry_year===year))return this.notify('Версія ОП за '+year+' рік уже існує','err');
 if(!confirm('Створити версію ОП за '+year+' рік як копію '+this.lab('program_versions',src)+'?\nКопіюються: навчальний план, компетентності, матриця, тексти ОПП. Не копіюються: дисципліни (потоки), документи, затвердження.'))return;
-this.clBusy=true;let nv=null;
+this.clBusy=true;let nv=null,step='версія ОП',ok=false;
 try{const chunk=async(t,rows)=>{for(let i=0;i<rows.length;i+=400){const{error}=await sb.from(t).insert(rows.slice(i,i+400));if(error)throw error}};
 const r0=await sb.from('program_versions').insert({program_id:src.program_id,entry_year:year}).select().single();if(r0.error)throw r0.error;nv=r0.data;
-const cur=(this.D.curricula||[]).find(c=>c.version_id===src.id);
+step='навчальний план';const cur=(this.D.curricula||[]).find(c=>c.version_id===src.id);
 if(cur){const{id,...rest}=cur;const r=await sb.from('curricula').insert({...rest,version_id:nv.id,source_file:(cur.source_file||'')+' (копія з '+src.entry_year+')',imported_at:new Date().toISOString(),imported_by:this.session.user.id}).select().single();if(r.error)throw r.error;
 const items=(this.D.curriculum_items||[]).filter(i=>i.curriculum_id===cur.id).map(({id,curriculum_id,...x})=>({...x,curriculum_id:r.data.id}));await chunk('curriculum_items',items)}
-const comps=(this.D.competencies||[]).filter(c=>c.version_id===src.id);const idMap={};
+step='компетентності';const comps=(this.D.competencies||[]).filter(c=>c.version_id===src.id);const idMap={};
 if(comps.length){const r=await sb.from('competencies').insert(comps.map(({id,version_id,...x})=>({...x,version_id:nv.id}))).select();if(r.error)throw r.error;
 const byCode=new Map(r.data.map(x=>[x.code,x.id]));comps.forEach(c=>{idMap[c.id]=byCode.get(c.code)})}
-const cols=(this.D.matrix_columns||[]).filter(c=>c.version_id===src.id).map(({id,version_id,...x})=>({...x,version_id:nv.id}));await chunk('matrix_columns',cols);
+step='матриця';const cols=(this.D.matrix_columns||[]).filter(c=>c.version_id===src.id).map(({id,version_id,...x})=>({...x,version_id:nv.id}));await chunk('matrix_columns',cols);
 const cells=(this.D.matrix_cells||[]).filter(c=>c.version_id===src.id&&idMap[c.competency_id]).map(c=>({version_id:nv.id,code:c.code,competency_id:idMap[c.competency_id]}));await chunk('matrix_cells',cells);
-const tx=(this.D.opp_texts||[]).find(x=>x.version_id===src.id);
+step='тексти ОПП';const tx=(this.D.opp_texts||[]).find(x=>x.version_id===src.id);
 if(tx){const{error}=await sb.from('opp_texts').insert({version_id:nv.id,data:OPPX.cloneData(tx.data),updated_by:this.session.user.id});if(error)throw error}
-await this.loadAll();this.npPick(nv.id,true);this.clYear='';
-this.notify('Створено версію ОП '+year+' (копія '+src.entry_year+')')}
-catch(e){if(nv){try{await sb.from('program_versions').delete().eq('id',nv.id)}catch(_){}}this.err(e);this.notify('Клонування скасовано, часткову копію видалено','err')}
+ok=true}
+catch(e){if(nv){try{await sb.from('program_versions').delete().eq('id',nv.id)}catch(_){}}console.error('clone',step,e);this.notify('Клонування скасовано на кроці «'+step+'»: '+((e&&(e.message||e.details))||e)+'. Часткову копію видалено.','err')}
+if(ok){try{await this.loadAll();this.clYear='';this.npPick(nv.id,true)}catch(e){console.error('clone-after',e)}this.notify('Створено версію ОП '+year+' (копія '+src.entry_year+')')}
 this.clBusy=false},
 async otImport(ev){const f=ev.target.files[0];ev.target.value='';if(!f||!this.otF)return;
 if(!/\.docx$/i.test(f.name))return this.notify('Потрібен файл .docx (старі .doc збережіть у Word як .docx)','err');
