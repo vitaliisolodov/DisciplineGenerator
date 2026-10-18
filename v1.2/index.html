@@ -500,7 +500,26 @@ tr.eg td{border-top:2px solid #8a96ad}
       <p v-for="w in uWarn" :key="w" style="margin:2px 0;font-size:13px;color:#b26a00">⚠ {{w}}</p>
 
       <!-- Програма -->
-      <div v-if="uOpp" class="card" style="background:#f7f8fa;font-size:13px">
+      <!-- Такої ОПП ще немає в базі: створити нову -->
+      <div v-if="uNew" class="card" style="background:#f7f8fa;font-size:13px">
+        <label class="chk"><input type="checkbox" v-model="uOpt.newProg" style="display:inline;width:auto"> <b>{{uNew.prog ? 'Створити нову версію ОП' : 'Створити нову ОПП'}}</b> ({{uNew.prog ? 'рік вступу' : 'назва, рівень, спеціальність, рік вступу'}})</label>
+        <p v-if="uNew.ambiguous" style="margin:4px 0;color:#c62828">У базі кілька програм з такою назвою чи скороченням — оберіть версію ОП вручну зі списку вище.</p>
+        <template v-else>
+          <p v-if="uNew.prog" style="margin:4px 0">Програма <b>«{{uNew.prog.name}}»</b> уже є в базі, але версії ОП на {{uNew.year || 'цей'}} рік немає — буде створено лише версію, дані програми не змінюються.</p>
+          <table v-else style="margin-top:6px">
+            <tr><th>Поле</th><th>З ОПП</th></tr>
+            <tr v-for="r in uNew.fields" :key="r.k"><td>{{r.label}}</td><td style="color:#2e7d32;font-weight:bold">{{r.nv}}</td></tr>
+          </table>
+          <p v-if="!uNew.prog && !uOpp.name" style="margin:4px 0;color:#c62828">У файлі не знайдено назву ОПП — створити програму неможливо. Оберіть наявну версію ОП.</p>
+          <p v-if="!uOpp.entry_year" style="margin:4px 0">Рік вступу у файлі не знайдено — вкажіть: <input v-model.number="uNewYear" type="number" min="2000" max="2100" style="width:90px;display:inline-block"></p>
+          <p v-else style="margin:4px 0">Рік вступу (версія ОП): <b>{{uOpp.entry_year}}</b></p>
+          <p v-if="!uNew.prog" style="margin:4px 0">Кафедра (необов’язково):
+            <select v-model="uNewDept" style="display:inline-block;width:auto"><option value="">— без кафедри —</option><option v-for="d in (D.departments || [])" :key="d.id" :value="d.id">{{lab('departments', d)}}</option></select>
+          </p>
+        </template>
+        <small>Або оберіть наявну версію ОП у списку вище — тоді нічого не створюватиметься.</small>
+      </div>
+      <div v-if="uOpp && uVid" class="card" style="background:#f7f8fa;font-size:13px">
         <label class="chk"><input type="checkbox" v-model="uOpt.meta" style="display:inline;width:auto"> <b>Оновити дані програми</b> (назва, рівень, спеціальність)</label>
         <table v-if="uVid && oppDiff.length" style="margin-top:6px">
           <tr><th>Поле</th><th>Зараз у БД</th><th>З ОПП</th></tr>
@@ -524,6 +543,7 @@ tr.eg td{border-top:2px solid #8a96ad}
             <div v-if="uStats.updList.length > 40"><small>…і ще {{uStats.updList.length - 40}}</small></div>
           </details>
         </div>
+        <small v-else-if="uNew && uOpt.newProg && uNew.canCreate" style="color:#2e7d32">Буде створено нову версію ОП — усі позиції плану будуть новими.</small>
         <small v-else style="color:#b26a00">Оберіть версію ОП, щоб порівняти з БД.</small>
         <small>Рядки нижче можна виправити прямо тут до запису.</small>
         <div class="tw" style="max-height:60vh;overflow:auto">
@@ -590,9 +610,9 @@ tr.eg td{border-top:2px solid #8a96ad}
       </div>
 
       <p>
-        <button class="p" @click="uApply" :disabled="!uVid || uBusy">{{uBusy ? 'Запис…' : 'Записати вибране'}}</button>
+        <button class="p" @click="uApply" :disabled="(!uVid && !(uNew && uOpt.newProg && uNew.canCreate)) || uBusy">{{uBusy ? 'Запис…' : 'Записати вибране'}}</button>
         <button class="s" @click="uCancel" :disabled="uBusy">Скасувати</button>
-        <small v-if="!uVid" style="color:#b26a00;display:inline"> Оберіть версію ОП.</small>
+        <small v-if="!uVid && !(uNew && uOpt.newProg && uNew.canCreate)" style="color:#b26a00;display:inline"> Оберіть версію ОП{{uOpp ? ' або ввімкніть створення нової' : ''}}.</small>
       </p>
     </template>
   </div>
@@ -2845,6 +2865,11 @@ RP.fromFile=async f=>{
 // Пачноут версії збирається з комітів гілки безпосередньо перед злиттям у main (на прохання власника).
 // Нова версія — новий об'єкт зверху; date необов'язкова.
 const RELEASES=[
+{v:'1.2',date:'',title:'Виправлення й доробки імпорту',groups:[
+ ['Для адміністратора',[
+  ['Імпорт ОПП: якщо версію ОП не обрано й у базі такої ОПП ще немає, замість «Оновити дані програми» пропонується «Створити нову ОПП» (назва, рівень, спеціальність, рік вступу, за бажанням кафедра). Створюються програма й версія ОП, після чого в неї записуються навчальний план, компетентності та матриця. Якщо програма вже є, а версії на цей рік немає — створюється лише версія.','a'],
+ ]],
+]},
 {v:'1.1',date:'',title:'Імпорт ОПП і навчальних планів, імпорт РПНД з файлу',groups:[
  ['Для адміністратора',[
   ['Нова вкладка «ОПП та НП»: перегляд і редагування навчального плану версії ОП (код, назва, кредити ECTS, години, форма контролю, семестр).','a'],
@@ -2908,7 +2933,8 @@ data(){return{
 impStep:'opp',
 // єдиний імпорт ОПП + НП
 fnames:{}, uVid:'', uDonor:'', uOpp:null, uPlanRaw:null, uOppHash:'', uPlanHash:'', uOppName:'', uPlanName:'', uRows:[], uOppOnly:[], uWarn:[], uBusy:false,
-uOpt:{meta:true, plan:true, delMissing:false, addOppOnly:false, comps:true, updTexts:false, matrix:true, ik:true},
+uNewYear:'', uNewDept:'',
+uOpt:{newProg:true, meta:true, plan:true, delMissing:false, addOppOnly:false, comps:true, updTexts:false, matrix:true, ik:true},
 // редактор ОПП / НП
 ev:'', eMeta:null, eMeta0:'', eItems:[], eDel:[], eQ:'', eNoCode:false, eOpen:{}, eBusy:false, CONTROLS, LEVELS,
 loadYear:new Date().getFullYear(), loadTeacher:null,
@@ -3338,6 +3364,19 @@ oppDiff() {
     ['Код спеціальності', 'specialty_code', o.specialty_code],
     ['Спеціальність', 'specialty_name', o.specialty_name]
   ].filter(r => r[2]).map(([label, k, nv]) => ({ label, k, cur: p[k] || '', nv, changed: (p[k] || '') !== nv }));
+},
+// Версію ОП не обрано й не підібрано: такої ОПП (або її версії на цей рік) ще немає — можна створити
+uNew() {
+  const o = this.uOpp;
+  if (!o || this.uVid) return null;
+  const progs = (this.D.programs || []).filter(p => (o.abbr && p.abbr === o.abbr) || (o.name && nameKey(p.name) === nameKey(o.name)));
+  const prog = progs.length === 1 ? progs[0] : null;
+  const year = +o.entry_year || +this.uNewYear || null;
+  const fields = [
+    ['Назва', 'name', o.name], ['Скорочення', 'abbr', o.abbr], ['Рівень', 'education_level', o.degree_level],
+    ['Код спеціальності', 'specialty_code', o.specialty_code], ['Спеціальність', 'specialty_name', o.specialty_name]
+  ].filter(r => r[2]).map(([label, k, nv]) => ({ label, k, nv }));
+  return { prog, ambiguous: progs.length > 1, year, fields, canCreate: progs.length <= 1 && !!year && !!(prog || o.name) };
 },
 // Підсумкові рядки імпорту: таблиця + (за бажанням) компоненти ОПП, яких немає у плані
 uFinalRows() { return this.uOpt.addOppOnly ? [...this.uRows, ...this.uOppOnly] : this.uRows; },
@@ -3965,12 +4004,16 @@ uPickDonor() {
   if (!d.some(x => x.id === this.uDonor)) this.uDonor = this.uOpp && this.uOpp.competencies.some(c => !c.text) && d.length ? d[0].id : '';
 },
 uRemoveRow(i) { this.uRows.splice(i, 1); },
-uCancel() { this.uOpp = null; this.uPlanRaw = null; this.uRows = []; this.uOppOnly = []; this.uWarn = []; },
+uCancel() { this.uNewYear = ''; this.uNewDept = ''; this.uOpp = null; this.uPlanRaw = null; this.uRows = []; this.uOppOnly = []; this.uWarn = []; },
 async uApply() {
-  const v = this.uVid;
-  if (!v) return this.notify('Оберіть версію ОП', 'err');
+  let v = this.uVid;
+  const nw = !v && this.uOpt.newProg && this.uNew && this.uNew.canCreate ? this.uNew : null;
+  if (!v && !nw) return this.notify('Оберіть версію ОП' + (this.uOpp ? ' або ввімкніть створення нової ОПП' : ''), 'err');
   if (!this.uOpp && !this.uPlanRaw) return;
   const o = this.uOpt, parts = [];
+  if (nw) parts.push(nw.prog
+    ? `• нова версія ОП ${nw.year} для програми «${nw.prog.name}»`
+    : `• нова ОПП «${this.uOpp.name}» (${this.uNew.fields.filter(r => r.k !== 'name').map(r => r.nv).join(', ') || 'без додаткових даних'}) і версія ОП ${nw.year}`);
   const doMeta = o.meta && this.uOpp && this.oppDiff.some(r => r.changed);
   const doPlan = o.plan && this.uFinalRows.length;
   const doComps = o.comps && this.uOpp && this.uOpp.competencies.length;
@@ -3981,13 +4024,19 @@ async uApply() {
     const s = this.uStats;
     parts.push(`• план: нових ${s.ins}, оновиться ${s.upd}, без змін ${s.same}` + (o.delMissing && s.miss ? `, буде ВИДАЛЕНО ${s.miss}` : ''));
   }
-  if (doComps) parts.push(`• компетентності: нових ${this.uComps.filter(c => c.state === 'new').length}` + (o.updTexts ? `, оновиться текстів ${this.uComps.filter(c => c.state === 'changed').length}` : ''));
+  if (doComps) parts.push(`• компетентності: нових ${nw ? this.uOpp.competencies.length : this.uComps.filter(c => c.state === 'new').length}` + (o.updTexts ? `, оновиться текстів ${this.uComps.filter(c => c.state === 'changed').length}` : ''));
   if (doMx) parts.push('• матриця: ' + [mxN ? `«+» для ${mxN} ОК (поточні відмітки цих ОК буде замінено)` : '', o.ik ? 'ІК для всіх дисциплін' : ''].filter(Boolean).join(' + '));
   if (!parts.length) return this.notify('Нічого записувати — увімкніть хоча б один пункт або змініть дані', 'warn');
-  if (!confirm('Записати у версію «' + this.lab('program_versions', (this.D.program_versions || []).find(x => x.id === v)) + '»:\n' + parts.join('\n'))) return;
+  const target = nw ? 'нову версію ОП ' + nw.year : 'версію «' + this.lab('program_versions', (this.D.program_versions || []).find(x => x.id === v)) + '»';
+  if (!confirm('Записати у ' + target + ':\n' + parts.join('\n'))) return;
   this.uBusy = true;
   const done = [], warn = [];
   try {
+    if (nw) {
+      v = await this.uCreateProgram(nw);
+      this.uVid = v;
+      done.push(nw.prog ? 'версія ОП ' + nw.year : 'нова ОПП «' + this.uOpp.name + '», версія ОП ' + nw.year);
+    }
     if (doMeta) { await this.uApplyMeta(); done.push('програма'); }
     if (doPlan) { const r = await this.uApplyPlan(); done.push(`план (+${r.ins} ~${r.upd}${r.del ? ' −' + r.del : ''})`); }
     if (doComps) { const r = await this.uApplyComps(); done.push(`компетентності (+${r.ins}${r.upd ? ' ~' + r.upd : ''})`); }
@@ -3999,6 +4048,28 @@ async uApply() {
     this.err(e);
     if (done.length) this.notify('Частково записано: ' + done.join('; ') + '. Помилка на наступному кроці — повторіть імпорт (дані оновлюються на місці).', 'warn');
   } finally { this.uBusy = false; }
+},
+// Створити програму (якщо її ще немає) і версію ОП на рік вступу; повертає id версії
+async uCreateProgram(nw) {
+  const o = this.uOpp;
+  let prog = nw.prog;
+  if (!prog) {
+    const row = { name: o.name, abbr: o.abbr || null, education_level: o.degree_level || null,
+      specialty_code: o.specialty_code || null, specialty_name: o.specialty_name || null,
+      study_years: o.study_years || null, department_id: this.uNewDept || null };
+    const { data, error } = await sb.from('programs').insert(row).select('*').single();
+    if (error) throw error;
+    prog = data;
+  }
+  let ver = (this.D.program_versions || []).find(x => x.program_id === prog.id && +x.entry_year === +nw.year);
+  if (!ver) {
+    const { data, error } = await sb.from('program_versions').insert({ program_id: prog.id, entry_year: nw.year }).select('*').single();
+    if (error) throw error;
+    ver = data;
+  }
+  this.D.programs = await all('programs');
+  this.D.program_versions = await all('program_versions');
+  return ver.id;
 },
 async uApplyMeta() {
   const v = (this.D.program_versions || []).find(x => x.id === this.uVid);
