@@ -428,8 +428,10 @@ tr.eg td{border-top:2px solid #8a96ad}
       <select v-model="otDonor"><option value="">— скопіювати тексти з… —</option><option v-for="v in otPrev" :key="v.id" :value="v.id">{{lab('program_versions', v)}}</option></select>
       <button class="s" v-if="otDonor" @click="otCopy">Скопіювати</button>
       <button class="s" @click="oppDownload">⬇ ОПП (.docx)</button>
+      <label class="s" style="cursor:pointer;display:inline-block;padding:5px 10px;border:1px solid #99a;border-radius:4px">⬆ Імпорт текстів із ОПП (.docx)<input type="file" accept=".docx" @change="otImport($event)" style="display:none"></label>
     </template>
   </div>
+  <ul v-if="otWarn.length" style="color:#b26a00;margin:6px 0"><li v-for="w in otWarn" :key="w">{{w}}</li></ul>
   <template v-if="otF">
     <div class="card form" v-for="sc in OPPX.SECTIONS" :key="sc.key">
       <b>{{sc.title}}</b>
@@ -3254,6 +3256,7 @@ const P=(t,o={})=>`<w:p><w:pPr><w:spacing w:before="0" w:after="0"/>${o.left?'':
 const cell=(t,o={})=>`<w:tc><w:tcPr>${o.w?`<w:tcW w:w="${o.w}" w:type="dxa"/>`:''}${o.span>1?`<w:gridSpan w:val="${o.span}"/>`:''}${o.fill?`<w:shd w:val="clear" w:color="auto" w:fill="${o.fill}"/>`:''}<w:vAlign w:val="center"/></w:tcPr>${P(t,o)}</w:tc>`;
 const table=(rows,o={})=>{const B='<w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="000000"/>';
  return `<w:tbl><w:tblPr><w:tblW w:w="${o.pct?'5000':'0'}" w:type="${o.pct?'pct':'auto'}"/><w:tblBorders>${B}</w:tblBorders><w:tblLayout w:type="${o.fixed?'fixed':'autofit'}"/><w:tblCellMar><w:left w:w="40" w:type="dxa"/><w:right w:w="40" w:type="dxa"/></w:tblCellMar></w:tblPr>${o.grid?'<w:tblGrid>'+o.grid.map(g=>`<w:gridCol w:w="${g}"/>`).join('')+'</w:tblGrid>':''}${rows.map(r=>`<w:tr><w:trPr><w:cantSplit/>${r.head?'<w:tblHeader/>':''}</w:trPr>${r.cells.join('')}</w:tr>`).join('')}</w:tbl>`};
+const disp=c=>{const s=String(c||'').replace(/\./g,' ').replace(/\s+/g,' ').trim();return s.replace(/^РН\b/,'ПРН')};
 const nameOf=it=>[it.name_uk,it.name_en].filter(Boolean).join(' / ');
 const ctlOf=it=>{if(it.control_type)return it.control_type;const h=it.hours_by_semester||{};const c=Object.values(h).map(x=>x&&x.control).filter(Boolean);return[...new Set(c)].join(', ')};
 const isEl=it=>/^вибір/i.test(it.discipline_type||'')||/^ВК/i.test(it.code||'');
@@ -3281,7 +3284,7 @@ function matrixXml(D,vid,items,kinds,emptyText){
  const use=cols.length?cols:[...mc.keys()];
  const lw=1100,w=Math.max(380,Math.floor((15000-lw)/Math.max(use.length,1)));
  const rows=[{head:1,cells:[cell('',{w:lw,fill:'D9D9D9'}),...use.map(c=>cell(c,{b:1,w,fill:'D9D9D9',sz:use.length>24?12:use.length>14?14:16}))]}];
- comps.forEach(cp=>rows.push({cells:[cell(cp.code,{b:1,w:lw}),...use.map(c=>cell((mc.get(c)||new Set()).has(cp.id)?'+':'',{w,sz:16}))]}));
+ comps.forEach(cp=>rows.push({cells:[cell(disp(cp.code),{b:1,w:lw}),...use.map(c=>cell((mc.get(c)||new Set()).has(cp.id)?'+':'',{w,sz:16}))]}));
  return table(rows,{fixed:1,grid:[lw,...use.map(()=>w)]})}
 // ---- Дескриптори НРК
 function nrkXml(D,vid,data){
@@ -3293,7 +3296,7 @@ function nrkXml(D,vid,data){
  let kind=null;
  comps.forEach(cp=>{if(cp.kind!==kind){kind=cp.kind;rows.push({cells:[cell(kind==='ZK'?'Загальні компетентності':'Фахові компетентності',{b:1,span:5,left:1,fill:'F2F2F2'})]})}
   const sel=new Set(map[cp.code]||[]);
-  rows.push({cells:[cell(cp.code,{b:1,w:W[0]}),...DESC_GROUPS.map(([g],i)=>cell(desc.filter(d=>d.group===g&&sel.has(d.code)).map(d=>d.code).join(', '),{w:W[i+1]}))]})});
+  rows.push({cells:[cell(disp(cp.code),{b:1,w:W[0]}),...DESC_GROUPS.map(([g],i)=>cell(desc.filter(d=>d.group===g&&sel.has(d.code)).map(d=>d.code).join(', '),{w:W[i+1]}))]})});
  return table(rows,{pct:1})}
 // ---- ПРН × компетентності
 function prnCompXml(D,vid,data){
@@ -3301,8 +3304,8 @@ function prnCompXml(D,vid,data){
  const prn=ord('RN'),cols=[...ord('IK'),...ord('ZK'),...ord('FK')];
  if(!prn.length||!cols.length)return P('(немає ПРН або компетентностей)',{left:1});
  const map=(data&&data.prn_map)||{};const lw=1000,w=Math.max(360,Math.floor((14000-lw)/cols.length));
- const rows=[{head:1,cells:[cell('ПРН',{b:1,w:lw,fill:'D9D9D9'}),...cols.map(c=>cell(c.code,{b:1,w,fill:'D9D9D9',sz:cols.length>24?12:14}))]}];
- prn.forEach(p=>{const s=new Set(map[p.code]||[]);rows.push({cells:[cell(p.code,{b:1,w:lw}),...cols.map(c=>cell(s.has(c.code)?'+':'',{w,sz:16}))]})});
+ const rows=[{head:1,cells:[cell('ПРН',{b:1,w:lw,fill:'D9D9D9'}),...cols.map(c=>cell(disp(c.code),{b:1,w,fill:'D9D9D9',sz:cols.length>24?12:14}))]}];
+ prn.forEach(p=>{const s=new Set(map[p.code]||[]);rows.push({cells:[cell(disp(p.code),{b:1,w:lw}),...cols.map(c=>cell(s.has(c.code)?'+':'',{w,sz:16}))]})});
  return table(rows,{fixed:1,grid:[lw,...cols.map(()=>w)]})}
 // ---- Легенда «У таблиці позначено»
 const legend=(data)=>DESC_GROUPS.map(([g,n])=>({title:n.toUpperCase(),items:parseDesc(data).filter(d=>d.group===g).map(d=>(d.code?d.code+'. ':'')+d.text)}));
@@ -3316,7 +3319,7 @@ function context(D,vid,o){
  const blankLine='«____»_________ 20__ р. № ____';['council_changes','order_changes'].forEach(k=>{if(!t[k].trim())t[k]=blankLine});
  const lvl={'бакалаврський':'першого (бакалаврського) рівня','магістерський':'другого (магістерського) рівня','освітньо-науковий':'третього (освітньо-наукового) рівня'}[prog.education_level]||prog.education_level||'';
  const comp=k=>(D.competencies||[]).filter(c=>c.version_id===vid&&c.kind===k).sort((a,b)=>(a.sort||0)-(b.sort||0));
- const lst=a=>a.map(c=>({code:c.code,label:String(c.code||'').replace(/\./g,' ').replace(/\s+/g,' ').trim(),text:c.text}));
+ const lst=a=>a.map(c=>({code:c.code,label:disp(c.code),text:c.text}));
  return{t,program_name:prog.name||'',program_abbr:prog.abbr||'',level_text:lvl,specialty_code:prog.specialty_code||'',specialty_name:prog.specialty_name||'',
   specialty:[prog.specialty_code,prog.specialty_name].filter(Boolean).join(' '),entry_year:ver.entry_year||'',
   faculty:fac.name||'',department:dep.name||'',guarantor:prog.guarantor||'',
@@ -3325,7 +3328,98 @@ function context(D,vid,o){
   components_xml:componentsXml(items),matrix_zk_fk_xml:matrixXml(D,vid,items,['ZK','FK'],'(немає матриці компетентностей)'),
   matrix_prn_xml:matrixXml(D,vid,items,['RN'],'(немає ПРН у матриці)'),nrk_xml:nrkXml(D,vid,data),prn_comp_xml:prnCompXml(D,vid,data),
   nrk_legend:legend(data),total_ects:Math.round(items.reduce((s,i)=>s+(Number(i.ects)||0),0)*10)/10}}
-return{SECTIONS,FIELD_KEYS,DESC_GROUPS,parseDesc,blank,context,componentsXml,matrixXml,nrkXml,prnCompXml,lines}
+const OPPX_LABEL=Object.fromEntries(SECTIONS.flatMap(s=>s.f.map(x=>[x[0],x[1]])));
+
+// ---- Імпорт текстів із .docx ОПП (HTML від mammoth) → поля opp_texts.data
+const PROFILE_MAP=[['Повнаназвазакладу','institution'],['Типдиплому','diploma'],['Строкіформи','duration'],['Наявністьакредитації','accreditation'],
+ ['Цикл/рівень','cycle'],['Передумови','prerequisites'],['Мова(и)','language'],['Терміндії','validity'],['Інтернет-адреса','url'],['Предметнаобласть','subject_area'],
+ ['Орієнтація','orientation'],['Основнийфокус','focus'],['Особливостіпрограми','features'],['Придатність','employability'],['Подальшенавчання','further'],
+ ['Викладанняінавчання','teaching'],['Викладаннятанавчання','teaching'],['Оцінювання','assessment'],['Кадрове','staff'],['Матеріально','material'],['Інформаційне','info'],
+ ['Національнакредитна','mob_national'],['Міжнароднакредитна','mob_international'],['Навчанняіноземних','mob_foreign']];
+const LATC={A:'А',B:'В',C:'С',E:'Е',H:'Н',I:'І',K:'К',M:'М',O:'О',P:'Р',T:'Т',X:'Х'};
+const nk=s=>String(s||'').replace(/[A-Z]/g,c=>LATC[c]||c);
+const compCode=s=>{const m=nk(s).replace(/\s+/g,'').toUpperCase().match(/^(ІК|ЗК|СК|ФК|ПРН|РН)\.?(\d+)?$/);if(!m)return null;const k={ІК:'ІК',ЗК:'ЗК',СК:'ФК',ФК:'ФК',ПРН:'РН',РН:'РН'}[m[1]];return k+'.'+(m[2]||'1')};
+function parseTexts(html,DP){
+ const doc=new DP().parseFromString('<body>'+html+'</body>','text/html');
+ const W=[];const data={};const found=[];
+ const ptext=p=>{const c=p.cloneNode(true);c.querySelectorAll('br').forEach(b=>b.replaceWith('\n'));return c.textContent.replace(/ /g,' ').replace(/[ \t]+/g,' ').trim()};
+ const blocks=[...doc.body.children];
+ const cellLines=td=>{const ps=td.querySelectorAll('p');const L=[];if(ps.length)ps.forEach(p=>ptext(p).split('\n').forEach(x=>{x=x.trim();if(x)L.push(x)}));else td.textContent.split('\n').forEach(x=>{x=x.trim();if(x)L.push(x)});return L};
+ const paras=[];blocks.forEach((b,i)=>{if(b.tagName==='P'||/^H\d$/.test(b.tagName))paras.push({i,t:ptext(b)});else if(b.tagName==='UL'||b.tagName==='OL')b.querySelectorAll('li').forEach(li=>paras.push({i,t:ptext(li)}))});
+ const set=(k,v)=>{v=String(v||'').trim();if(v){data[k]=v;found.push(k)}};
+ const pt=paras.map(p=>p.t);const all=pt.join('\n');
+ // титул
+ let m;
+ if((m=all.match(/галузі знань\s+(.+)/i)))set('field_of_knowledge',m[1]);
+ if((m=all.match(/Кваліфікація:\s*(.+)/i)))set('qualification',m[1]);
+ if((m=all.match(/\(протокол від\s+(.+?)\)\s*\n/i)))set('council_protocol',m[1]);
+ if((m=all.match(/вводиться в дію з\s+(.+)/i)))set('effective_date',m[1]);
+ if((m=all.match(/\(наказ від\s+(.+?)\)\s*\n/i)))set('order',m[1]);
+ if((m=all.match(/Харків\s+(\d{4})/)))set('publish_year',m[1]);
+ if((m=all.match(/Голова Вченої ради[_\s]*([^\n]+)/i)))set('council_head',m[1].replace(/^_+/,''));
+ if((m=all.match(/\nРектор[_\s]*([^\n_]+)\n/i)))set('rector',m[1]);
+ const sm=all.match(/зі змінами протокол від\s+(.+)/i);if(sm&&!/_{3,}/.test(sm[1]))set('council_changes',sm[1]);
+ const so=all.match(/зі змінами наказ від\s+(.+)/i);if(so&&!/_{3,}/.test(so[1]))set('order_changes',so[1]);
+ // роботодавці, студсамоврядування
+ const idx=re=>pt.findIndex(x=>re.test(x));
+ const iE=idx(/^Представники роботодавців/),iS=idx(/^Представник студентського/),iR=idx(/^РОЗРОБЛЕНО/);
+ if(iE>=0&&iS>iE){const L=pt.slice(iE+1,iS).filter(Boolean);
+  // абзаци без підпису склеюємо в один запис (посада на кількох рядках)
+  const rec=[];let cur=[];L.forEach(l=>{cur.push(l);if(/_{3,}|\t/.test(l)){rec.push(cur.join(' '));cur=[]}});if(cur.length)rec.push(cur.join(' '));
+  set('employers',rec.map(x=>x.replace(/\s*_{3,}\s*/g,'   ').replace(/\s+/g,' ').trim()).join('\n'))}
+ if(iS>=0&&iR>iS)set('student_rep',pt.slice(iS+1,iR).filter(Boolean).join(' ').replace(/\s*_{3,}\s*/g,'   ').replace(/\s+/g,' '));
+ // проєктна група — з «Передмови» (повні дані)
+ const iP=idx(/^ПЕРЕДМОВА/);
+ if(iP>=0){const sl=pt.slice(iP);const iL=sl.findIndex(x=>/^Керівник проєктної групи/i.test(x)),iM=sl.findIndex(x=>/^Члени проєктної групи/i.test(x));
+  const end=sl.findIndex((x,i)=>i>iM&&/^Гарант/i.test(x));
+  if(iL>=0&&iM>iL){set('team_lead',sl.slice(iL+1,iM).filter(x=>x&&!/^\(ПІБ/.test(x)).join(' '))}
+  if(iM>=0){const L=sl.slice(iM+1,end>0?end:undefined).filter(x=>x&&!/^\(ПІБ/.test(x));set('team_members',L.join('\n'))}}
+ // атестація
+ const iA=idx(/^3\.\s*Форма атестації/);
+ if(iA>=0){const sl=pt.slice(iA+1);const kK=sl.findIndex(x=>/^Форми атестації/i.test(x)),kV=sl.findIndex(x=>/^Вимоги до кваліфікаційної/i.test(x)),kE=sl.findIndex(x=>/^4\.\s/.test(x));
+  if(kK>0)set('attestation_form',sl.slice(0,kK).filter(Boolean).join('\n'));
+  if(kK>=0&&kV>kK)set('attestation_kinds',sl.slice(kK+1,kV).filter(Boolean).join('\n'));
+  if(kV>=0)set('attestation_req',sl.slice(kV+1,kE>kV?kE:undefined).filter(Boolean).join('\n'))}
+ // легенда НРК
+ const iL=idx(/^У таблиці позначено/);
+ if(iL>=0){const g={ЗН:[],У:[],К:[],АВ:[]};let cur=null;
+  for(const t of pt.slice(iL+1)){if(/^\d+\.\s/.test(t)||/^Таблиця\s*\d/.test(t))break;
+   if(/^ЗНАННЯ$/i.test(t))cur='ЗН';else if(/^УМІННЯ$/i.test(t))cur='У';else if(/^КОМУНІКАЦІЯ$/i.test(t))cur='К';else if(/^(АВТОНОМІЯ|ВІДПОВІДАЛЬНІСТЬ)/i.test(t))cur='АВ';
+   else if(cur&&t)g[cur].push(t)}
+  if(Object.values(g).some(a=>a.length)){data.nrk_text={ЗН:g.ЗН.join('\n'),У:g.У.join('\n'),К:g.К.join('\n'),АВ:g.АВ.join('\n')};found.push('nrk_text')}}
+ // таблиці
+ const tables=[...doc.body.querySelectorAll(':scope > table')];
+ const grid=t=>[...t.rows].map(r=>{const o=[];[...r.cells].forEach(c=>{const sp=c.colSpan||1;for(let i=0;i<sp;i++)o.push(c)});return o});
+ const prof=tables.find(t=>/Загальна інформація/.test(t.rows[0]&&t.rows[0].textContent));
+ if(prof){let afterPurpose=false;[...prof.rows].forEach(r=>{const cs=[...r.cells];
+   if(cs.length===1){const tx=cs[0].textContent.trim();if(/^2\s*-\s*Мета/.test(tx)){afterPurpose=true;return}if(afterPurpose&&tx.length>30&&!/^\d\s*-/.test(tx)){set('purpose',cellLines(cs[0]).join('\n'));afterPurpose=false}return}
+   if(cs.length<2)return;const lab=cs[0].textContent.replace(/\s+/g,'');const lines=cellLines(cs[1]);
+   if(/^Ступіньвищоїосвіти/.test(lab)){set('degree',lines[0]);set('qualification',lines.slice(1).join(' ')||data.qualification);return}
+   const hit=PROFILE_MAP.find(([k])=>lab.startsWith(k));if(hit)set(hit[1],lines.join('\n'))})}
+ // ЗК/ФК → дескриптори НРК
+ const nrk=tables.find(t=>/Класифікація компетентностей за НРК/.test(t.rows[0]&&t.rows[0].textContent));
+ if(nrk){const map={};[...nrk.rows].slice(1).forEach(r=>{const cs=[...r.cells];if(cs.length<5)return;const c=compCode(cs[0].textContent);if(!c||c.startsWith('РН.'))return;
+   const codes=cs.slice(1).flatMap(x=>x.textContent.split(/[,;\s]+/).map(s=>s.trim()).filter(Boolean)).map(s=>nk(s).toUpperCase());if(codes.length)map[c]=codes});
+  if(Object.keys(map).length){data.nrk_map=map;found.push('nrk_map')}}
+ // ПРН → компетентності
+ const pc=tables.find(t=>/Інтегральна\s*компетентність/.test(t.rows[0]&&t.rows[0].textContent)&&/Програмні/.test(t.rows[0].textContent));
+ if(pc){const g=grid(pc);const h2=g.findIndex(r=>r.some(c=>/Загальні компетентності/.test(c.textContent)));
+  const firstData=g.findIndex(r=>compCode(r[0].textContent)&&/^РН/.test(compCode(r[0].textContent)));
+  if(h2>=0&&firstData>h2){const hdr=g[firstData-1],grp=g[h2];const cols=[];let zk=0,fk=0;
+   hdr.forEach((c,ci)=>{if(ci===0)return;const tx=c.textContent.trim(),gt=grp[ci]?grp[ci].textContent:'';
+    if(/Інтегральна/.test(tx)||(/Інтегральна/.test(gt)&&!/\d/.test(tx)))cols[ci]='ІК.1';
+    else if(/\d/.test(tx)&&/Загальні/.test(gt))cols[ci]='ЗК.'+tx.replace(/\D/g,'');
+    else if(/\d/.test(tx))cols[ci]='ФК.'+tx.replace(/\D/g,'')});
+   const map={};for(let r=firstData;r<g.length;r++){const p=compCode(g[r][0].textContent);if(!p||!p.startsWith('РН.'))continue;
+    const arr=[];g[r].forEach((c,ci)=>{if(ci>0&&cols[ci]&&/\+/.test(c.textContent)&&!arr.includes(cols[ci]))arr.push(cols[ci])});if(arr.length)map[p]=arr}
+   if(Object.keys(map).length){data.prn_map=map;found.push('prn_map')}}}
+ if(data.nrk_map&&data.nrk_text){const canon={};parseDesc(data).forEach(d=>{canon[d.code.toUpperCase()]=d.code});
+  Object.keys(data.nrk_map).forEach(k=>{data.nrk_map[k]=data.nrk_map[k].map(c=>canon[c]||c)});
+  const miss=new Set();Object.values(data.nrk_map).forEach(a=>a.forEach(c=>{if(!Object.values(canon).includes(c))miss.add(c)}));if(miss.size)W.push('Коди дескрипторів у таблиці НРК, яких немає в легенді: '+[...miss].join(', '))}
+ const need=['institution','purpose','orientation','focus','features','employability','teaching','assessment','staff','material','info'];
+ need.filter(k=>!data[k]).forEach(k=>W.push('Не знайдено: '+((OPPX_LABEL||{})[k]||k)));
+ return{data,found:[...new Set(found)],warnings:W}}
+return{parseTexts,SECTIONS,FIELD_KEYS,DESC_GROUPS,parseDesc,blank,context,componentsXml,matrixXml,nrkXml,prnCompXml,lines}
 })();
 // ===== V2-OPP END =====
 
@@ -3404,7 +3498,7 @@ loadYear:new Date().getFullYear(), loadTeacher:null,
 impLoad:null, loadSkipNonDisc:true, loadOnlyMatched:false, loadSharedKey:true,
 statusYear:0, statusFilter:'',
 // v2: перевірки й звіт змін
-ckV:'', ckSev:'', rpA:'', rpB:'', OPPX:Object.freeze(OPPX), otV:'', otF:null, otDonor:'', otBusy:false, oppMissing:false,
+ckV:'', ckSev:'', rpA:'', rpB:'', OPPX:Object.freeze(OPPX), otV:'', otF:null, otDonor:'', otBusy:false, oppMissing:false, otWarn:[],
 
   tabs:[
   ['faculties','Факультети'],
@@ -4231,12 +4325,20 @@ if(kind==='rpnd'){const sg=await this.sigImages(d,dd.year);noFile=sg.noFile;appl
 const bytes=out.generate({type:'uint8array'});
 return{bytes,noFile,name:(kind==='rpnd'?'РПНД':'Силабус')+' '+d.name.replace(/[\\/:*?"<>|]/g,'')+' '+dd.year+'.docx'}},
 otComps(k){return(this.D.competencies||[]).filter(c=>c.version_id===this.otV&&k.includes(c.kind)).sort((a,b)=>k.indexOf(a.kind)-k.indexOf(b.kind)||(a.sort||0)-(b.sort||0))},
-otLoad(){const r=(this.D.opp_texts||[]).find(x=>x.version_id===this.otV);
+otLoad(){this.otWarn=[];const r=(this.D.opp_texts||[]).find(x=>x.version_id===this.otV);
 const d=JSON.parse(JSON.stringify((r&&r.data)||{}));const b=OPPX.blank();d.nrk_text=Object.assign(b.nrk_text,d.nrk_text||{});d.nrk_map=d.nrk_map||{};d.prn_map=d.prn_map||{};
 OPPX.FIELD_KEYS.forEach(k=>{if(d[k]==null)d[k]=''});this.otF=this.otV?d:null;this.otDonor=''},
 async otSave(){if(!this.otV||!this.otF)return;this.otBusy=true;
 try{const{error}=await sb.from('opp_texts').upsert({version_id:this.otV,data:this.otF,updated_by:this.session.user.id});if(error)throw error;
 this.D.opp_texts=await all('opp_texts');this.notify('Збережено')}catch(e){this.err(e)}this.otBusy=false},
+async otImport(ev){const f=ev.target.files[0];ev.target.value='';if(!f||!this.otF)return;
+if(!/\.docx$/i.test(f.name))return this.notify('Потрібен файл .docx (старі .doc збережіть у Word як .docx)','err');
+try{const{value:html}=await mammoth.convertToHtml({arrayBuffer:await f.arrayBuffer()});const r=OPPX.parseTexts(html,DOMParser);
+if(!r.found.length)return this.notify('У файлі не знайдено текстів ОПП','warn');
+if(!confirm('Підставити '+r.found.length+' знайдених полів у форму? Наявні значення цих полів буде замінено (збереження — окремою кнопкою).'))return;
+const d=r.data;Object.keys(d).forEach(k=>{if(k==='nrk_text')this.otF.nrk_text=Object.assign({},this.otF.nrk_text,d.nrk_text);else if(k==='nrk_map'||k==='prn_map')this.otF[k]=d[k];else this.otF[k]=d[k]});
+this.otWarn=r.warnings;this.notify('Імпортовано полів: '+r.found.length+(r.warnings.length?'. Є зауваження — див. під кнопками':''),r.warnings.length?'warn':'ok')}
+catch(e){this.notify('Не вдалося прочитати файл: '+(e.message||e),'err')}},
 otCopy(){const r=(this.D.opp_texts||[]).find(x=>x.version_id===this.otDonor);if(!r||!this.otF)return;
 if(!confirm('Замінити всі поточні тексти даними з обраної версії?'))return;
 const d=JSON.parse(JSON.stringify(r.data||{}));const b=OPPX.blank();d.nrk_text=Object.assign(b.nrk_text,d.nrk_text||{});d.nrk_map=d.nrk_map||{};d.prn_map=d.prn_map||{};
