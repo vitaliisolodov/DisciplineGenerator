@@ -252,7 +252,138 @@ tr.sel td{background:#eaf2ff}
 <section v-else-if="T[tab]">
 <h3>{{T[tab].label}}</h3>
 <p v-if="tab==='program_versions'" class="hint" style="margin:0 0 6px">Огляд усіх версій ОП і їх готовності. «Відкрити» вибирає версію для всіх кроків роботи над НП та ОПП.</p>
-<p v-if="!T[tab].noAdd"><button class="p" @click="addNew()">{{tab==='program_versions'?'+ Нова версія ОП':'+ Додати'}}</button></p>
+<div class="tb" v-if="!T[tab].noAdd||tab==='disciplines'" style="margin-top:0">
+<button v-if="!T[tab].noAdd" class="p" @click="addNew()">{{tab==='program_versions'?'+ Нова версія ОП':'+ Додати'}}</button>
+<button v-if="tab==='disciplines'" class="p" @click="loadOpen=!loadOpen">{{loadOpen?'▲ Згорнути імпорт':'⬆ Імпорт навантаження (xls)'}}</button>
+</div>
+<template v-if="tab==='disciplines'">
+  <div v-if="loadOpen" class="card">
+    <h3>Імпорт навантаження (xls)</h3>
+    <small>Розбиває на потоки за (ОП, рік вступу). Створює/оновлює дисципліни.</small>
+    <small v-if="!isAdmin" style="display:block;color:#667">Можна імпортувати лише своє навантаження: прізвище та ініціали у файлі мають збігатися з вашим профілем. Години беруться з навчального плану; розбіжності з файлом підсвічуються. Якщо дисципліна вже створена співавтором, вас буде додано до неї без змін самої дисципліни.</small>
+    <p>Навчальний рік:
+      <select v-model.number="loadYear">
+        <option v-for="y in YEARS" :key="y" :value="y">{{y}}/{{y+1}}</option>
+      </select>
+    </p>
+    <p v-if="isAdmin">Викладач:
+      <select v-model="loadTeacher">
+        <option :value="null">— визначити з файлу —</option>
+        <option v-for="p in profs" :key="p.id" :value="p.id">{{lab('profiles', p)}} · {{p.email}}</option>
+      </select>
+    </p>
+    <p><label class="fpick"><input type="file" accept=".xls,.xlsx" @change="fpName($event,'load'); impLoadFile($event)"><span class="b">Оберіть файл</span><span class="n">{{impLoad ? (fnames.load || 'файл завантажено') : 'Файл не вибрано'}}</span></label></p>
+
+    <template v-if="impLoad">
+<div v-if="!isAdmin && teacherCheck" class="card" :style="{background: teacherCheck.level==='ok' ? '#e8f5e9' : teacherCheck.level==='soft' ? '#fff8e1' : '#fdecea', fontSize:'13px'}">{{teacherCheck.msg}}</div>
+<p>Викладач у файлі: <b>{{impLoad.teacherRaw}}</b> ·
+   Рік: <b>{{impLoad.studyYear}}</b> ·
+   Дисциплін: <b>{{impLoad.rows.length}}</b></p>
+
+<div class="card" style="background:#f7f8fa;font-size:13px">
+  <b>Зведення:</b>
+  <ul style="margin:4px 0 0 18px">
+    <li>Рядків у файлі: <b>{{impLoad.rows.length}}</b></li>
+    <li>Потоків (після розбиття за ОП/роком): <b>{{impLoad.rows.reduce((a,r) => a + r.streams.length, 0)}}</b></li>
+    <li v-if="impLoad.rows.some(r => r.streams.some(s => !s.version_id))" style="color:#c62828">
+      Потоків без версії ОП (будуть пропущені): <b>{{impLoad.rows.reduce((a, r) => a + r.streams.filter(s => !s.version_id).length, 0)}}</b>
+      <button v-if="isAdmin && missingVersions.length" class="s" @click="createMissingVersions" style="margin-left:8px">
+        ➕ Створити відсутні версії ОП ({{missingVersions.length}})
+      </button>
+      <div v-if="missingVersions.length" style="font-size:12px;color:#667">
+        {{missingVersions.map(m => m.abbr + ' ' + m.year).join(', ')}}
+        <span v-if="!isAdmin"> — зверніться до адміністратора, щоб додати відсутні версії ОП.</span>
+      </div>
+    </li>
+    <li v-if="impLoad.rows.some(r => r.streams.some(s => s.diff || s.offSem))" style="color:#c62828">
+      Розбіжності годин з планом: <b>{{impLoad.rows.reduce((a, r) => a + r.streams.filter(s => s.diff).length, 0)}}</b> потоків
+      <span v-if="impLoad.rows.some(r => r.streams.some(s => s.offSem))"> · семестр відсутній у плані: <b>{{impLoad.rows.reduce((a, r) => a + r.streams.filter(s => s.offSem).length, 0)}}</b></span>
+      <div style="font-size:12px;color:#667">Пріоритет — години плану; значення з файлу показано закресленим.</div>
+    </li>
+    <li>Часткові збіги назв (перевірте): <b>{{impLoad.rows.flatMap(r => r.streams).filter(s => s.match && s.match.item && s.match.kind !== 'exact').length}}</b></li>
+    <li>Унікальних ОП: <b>{{new Set(impLoad.rows.flatMap(r => r.streams.map(s => s.version_id)).filter(Boolean)).size}}</b></li>
+    <li>
+      Потоків, які вже є в БД (буде оновлено):
+      <b>{{impLoad.rows.flatMap(r => r.streams).filter(s =>
+        (D.disciplines || []).some(d =>
+          d.version_id === s.version_id &&
+          d.study_year === loadYear &&
+          d.semester === s.semester
+        )).length}}</b>
+    </li>
+  </ul>
+</div>
+
+      <div v-for="(r, ri) in impLoad.rows" :key="ri" class="card" style="border-left:4px solid #1f3a5f">
+        <p><b>{{r.name}}</b>
+          <span v-if="r.isPractice" style="color:#889">[практика]</span>
+          <span v-if="r.isQualification" style="color:#889">[кваліф. робота]</span>
+          <span v-if="r.streams.some(s => !s.version_id)" style="color:#c62828">
+            ⚠ без версії ОП: {{r.streams.filter(s => !s.version_id).map(s => s.groups.join(' + ')).join('; ')}}
+          </span>
+          <span v-if="r.unresolved.some(g => !/-\d{2}-\d+/.test(g))" style="color:#c62828">
+            ⚠ не розпізнано запис групи: {{r.unresolved.filter(g => !/-\d{2}-\d+/.test(g)).join(', ')}}
+          </span>
+        </p>
+        <table>
+          <tr><th>ОП</th><th>Курс</th><th>Сем.</th><th>Групи</th><th>Студ.</th>
+              <th>Лк</th><th>Пз</th><th>Лб</th><th>Конс</th><th>У плані</th></tr>
+          <tr v-for="(s, si) in r.streams" :key="si">
+            <td>{{s.opp_abbr}}<small v-if="s.spec" style="color:#667"> ({{s.spec}})</small> · {{s.entry_year}}<br><small v-if="s.special.length" style="color:#667">{{s.special.join(', ')}}</small>
+              <div v-if="!s.version_id" style="font-size:12px;color:#c62828">{{s.reason}}<br>
+                <select v-if="isAdmin" v-model="s.version_id" @change="$nextTick(() => rematch(r, s))">
+                  <option :value="null">— обрати версію вручну —</option>
+                  <option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions', v)}}</option>
+                </select>
+              </div></td>
+            <td>{{s.course || '—'}}</td>
+            <td>{{s.semester}}</td>
+            <td>{{s.groups.join(' + ')}}</td>
+            <td>{{s.students_count}}</td>
+            <td :style="s.diff && s.diff.lectures ? 'background:#fdecea' : ''">
+              <template v-if="s.diff && s.diff.lectures"><b>{{s.planHours.lectures}}</b><br><small style="color:#c62828;text-decoration:line-through" title="У файлі навантаження">{{s.hours.lectures}}</small></template>
+              <template v-else>{{s.planHours ? s.planHours.lectures : s.hours.lectures}}</template>
+            </td>
+            <td :style="s.diff && s.diff.practicals ? 'background:#fdecea' : ''">
+              <template v-if="s.diff && s.diff.practicals"><b>{{s.planHours.practicals}}</b><br><small style="color:#c62828;text-decoration:line-through" title="У файлі навантаження">{{s.hours.practicals}}</small></template>
+              <template v-else>{{s.planHours ? s.planHours.practicals : s.hours.practicals}}</template>
+            </td>
+            <td :style="s.diff && s.diff.labs ? 'background:#fdecea' : ''">
+              <template v-if="s.diff && s.diff.labs"><b>{{s.planHours.labs}}</b><br><small style="color:#c62828;text-decoration:line-through" title="У файлі навантаження">{{s.hours.labs}}</small></template>
+              <template v-else>{{s.planHours ? s.planHours.labs : s.hours.labs}}</template>
+            </td>
+            <td :style="s.diff && s.diff.consultations ? 'background:#fdecea' : ''">
+              <template v-if="s.diff && s.diff.consultations"><b>{{s.planHours.consultations}}</b><br><small style="color:#c62828;text-decoration:line-through" title="У файлі навантаження">{{s.hours.consultations}}</small></template>
+              <template v-else>{{s.planHours ? s.planHours.consultations : s.hours.consultations}}</template>
+            </td>
+            <td>
+              <span v-if="s.match && s.match.item && s.match.kind === 'exact'">✅ {{s.match.item.code || s.match.item.name_uk}}</span>
+              <span v-else-if="s.match && s.match.item" style="color:#b26a00">
+                ⚠ {{s.match.item.code || '—'}} <small>≈ {{s.match.item.name_uk}}</small>
+                <small>({{s.match.kind === 'prefix' ? 'часткова назва' : 'схожа назва'}})</small>
+              </span>
+              <span v-else-if="s.match && s.match.kind === 'ambiguous'" style="color:#c62828">⚠ неоднозначно: {{s.match.candidates.join(' | ')}}</span>
+              <span v-else-if="s.match && s.match.kind === 'noplan'" style="color:#b26a00">— плану ОП немає</span>
+              <span v-else style="color:#b26a00">⚠ не знайдено</span>
+              <div v-if="s.diff" style="font-size:12px;color:#c62828">⚠ години в навантаженні ≠ плану (взято з плану)</div>
+              <div v-if="s.offSem" style="font-size:12px;color:#c62828">⚠ у плані немає годин у {{s.semester}} семестрі</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <p>
+        <label class="chk"><input type="checkbox" v-model="loadSkipNonDisc"> Пропустити практики й кваліф. роботи</label>
+        <label class="chk"><input type="checkbox" v-model="loadOnlyMatched"> Лише ті, де знайдено план</label>
+        <label class="chk"><input type="checkbox" v-model="loadSharedKey"> Об'єднувати однакові назви</label>
+      </p>
+      <p>
+        <button class="p" @click="impLoadApply" :disabled="!isAdmin && (!teacherCheck || teacherCheck.level === 'none')">Застосувати навантаження</button>
+        <button class="s" @click="impLoad=null">Скасувати</button>
+      </p>
+    </template>
+  </div>
+</template>
 <div class="tb">
 <input v-model="q" type="search" placeholder="🔍 Пошук по таблиці…">
 <template v-if="tab==='program_versions'">
@@ -596,18 +727,10 @@ tr.sel td{background:#eaf2ff}
 
 <!-- Майстер імпорту -->
 <section v-else-if="tab==='import'">
-  <h3>{{isAdmin ? 'Імпорт даних' : 'Імпорт мого навантаження'}}</h3>
-
-  <div class="card" v-if="isAdmin">
-    <div class="tb">
-      <button class="p" :class="{on:impStep==='opp'}"  @click="impStep='opp'">1. ОПП і навчальний план</button>
-      <button class="p" :class="{on:impStep==='load'}" @click="impStep='load'">2. Навантаження (xls)</button>
-    </div>
-  </div>
+  <h3>1. Імпорт ОПП і навчального плану</h3>
 
   <!-- 1. ОПП + навчальний план -->
-  <div v-if="isAdmin && impStep==='opp'" class="card">
-    <h3>1. ОПП і навчальний план</h3>
+  <div v-if="isAdmin" class="card">
     <small>Один крок замість двох. Завантажте ОПП (docx) і/або навчальний план (xls/xlsx) — достатньо будь-якого з них. Коди ОК/ВК підтягуються з ОПП за назвою; компетентності та «+» для ОК беруться з ОПП. Існуючі позиції плану <b>оновлюються на місці</b> (потоки не втрачають зв’язок із планом). Записане можна переглянути й виправити у вкладці «ОПП та НП».</small>
     <p>Версія ОП:
       <select v-model="uVid" @change="uDonor = ''; uBuild()">
@@ -721,6 +844,17 @@ tr.sel td{background:#eaf2ff}
         <small v-else style="color:#b26a00">Матрицю у файлі не знайдено.</small>
       </div>
 
+      <!-- Тексти ОПП -->
+      <div v-if="uOpp" class="card" style="background:#f7f8fa;font-size:13px">
+        <label class="chk"><input type="checkbox" v-model="uOpt.texts" :disabled="!uTexts||oppMissing" style="display:inline;width:auto"> <b>Записати тексти ОПП</b> (профіль, затвердження, проєктна група, атестація, дескриптори НРК, зв’язки)</label>
+        <template v-if="uTexts">
+          <div>Розпізнано полів: <b>{{uTexts.found.length}}</b>. Вони замінять відповідні поля у кроці «5. Текст ОПП»; решта полів не чіпається.</div>
+          <details v-if="uTexts.warnings.length"><summary style="color:#b26a00">Зауваження до тексту файлу ({{uTexts.warnings.length}})</summary><ul><li v-for="w in uTexts.warnings" :key="w">{{w}}</li></ul></details>
+        </template>
+        <small v-else style="color:#b26a00">У файлі не знайдено розділів ОПП, які можна розпізнати як тексти.</small>
+        <small v-if="oppMissing" style="color:#c62828">У БД немає таблиці opp_texts — виконайте міграцію 0002.</small>
+      </div>
+
       <p>
         <button class="p" @click="uApply" :disabled="!uVid || uBusy">{{uBusy ? 'Запис…' : 'Записати вибране'}}</button>
         <button class="s" @click="uCancel" :disabled="uBusy">Скасувати</button>
@@ -729,133 +863,6 @@ tr.sel td{background:#eaf2ff}
     </template>
   </div>
 
-  <!-- 3. Навантаження -->
-  <div v-if="impStep==='load'" class="card">
-    <h3>{{isAdmin ? '2. Навантаження (xls)' : 'Навантаження (xls)'}}</h3>
-    <small>Розбиває на потоки за (ОП, рік вступу). Створює/оновлює дисципліни.</small>
-    <small v-if="!isAdmin" style="display:block;color:#667">Можна імпортувати лише своє навантаження: прізвище та ініціали у файлі мають збігатися з вашим профілем. Години беруться з навчального плану; розбіжності з файлом підсвічуються. Якщо дисципліна вже створена співавтором, вас буде додано до неї без змін самої дисципліни.</small>
-    <p>Навчальний рік:
-      <select v-model.number="loadYear">
-        <option v-for="y in YEARS" :key="y" :value="y">{{y}}/{{y+1}}</option>
-      </select>
-    </p>
-    <p v-if="isAdmin">Викладач:
-      <select v-model="loadTeacher">
-        <option :value="null">— визначити з файлу —</option>
-        <option v-for="p in profs" :key="p.id" :value="p.id">{{lab('profiles', p)}} · {{p.email}}</option>
-      </select>
-    </p>
-    <p><label class="fpick"><input type="file" accept=".xls,.xlsx" @change="fpName($event,'load'); impLoadFile($event)"><span class="b">Оберіть файл</span><span class="n">{{impLoad ? (fnames.load || 'файл завантажено') : 'Файл не вибрано'}}</span></label></p>
-
-    <template v-if="impLoad">
-<div v-if="!isAdmin && teacherCheck" class="card" :style="{background: teacherCheck.level==='ok' ? '#e8f5e9' : teacherCheck.level==='soft' ? '#fff8e1' : '#fdecea', fontSize:'13px'}">{{teacherCheck.msg}}</div>
-<p>Викладач у файлі: <b>{{impLoad.teacherRaw}}</b> ·
-   Рік: <b>{{impLoad.studyYear}}</b> ·
-   Дисциплін: <b>{{impLoad.rows.length}}</b></p>
-
-<div class="card" style="background:#f7f8fa;font-size:13px">
-  <b>Зведення:</b>
-  <ul style="margin:4px 0 0 18px">
-    <li>Рядків у файлі: <b>{{impLoad.rows.length}}</b></li>
-    <li>Потоків (після розбиття за ОП/роком): <b>{{impLoad.rows.reduce((a,r) => a + r.streams.length, 0)}}</b></li>
-    <li v-if="impLoad.rows.some(r => r.streams.some(s => !s.version_id))" style="color:#c62828">
-      Потоків без версії ОП (будуть пропущені): <b>{{impLoad.rows.reduce((a, r) => a + r.streams.filter(s => !s.version_id).length, 0)}}</b>
-      <button v-if="isAdmin && missingVersions.length" class="s" @click="createMissingVersions" style="margin-left:8px">
-        ➕ Створити відсутні версії ОП ({{missingVersions.length}})
-      </button>
-      <div v-if="missingVersions.length" style="font-size:12px;color:#667">
-        {{missingVersions.map(m => m.abbr + ' ' + m.year).join(', ')}}
-        <span v-if="!isAdmin"> — зверніться до адміністратора, щоб додати відсутні версії ОП.</span>
-      </div>
-    </li>
-    <li v-if="impLoad.rows.some(r => r.streams.some(s => s.diff || s.offSem))" style="color:#c62828">
-      Розбіжності годин з планом: <b>{{impLoad.rows.reduce((a, r) => a + r.streams.filter(s => s.diff).length, 0)}}</b> потоків
-      <span v-if="impLoad.rows.some(r => r.streams.some(s => s.offSem))"> · семестр відсутній у плані: <b>{{impLoad.rows.reduce((a, r) => a + r.streams.filter(s => s.offSem).length, 0)}}</b></span>
-      <div style="font-size:12px;color:#667">Пріоритет — години плану; значення з файлу показано закресленим.</div>
-    </li>
-    <li>Часткові збіги назв (перевірте): <b>{{impLoad.rows.flatMap(r => r.streams).filter(s => s.match && s.match.item && s.match.kind !== 'exact').length}}</b></li>
-    <li>Унікальних ОП: <b>{{new Set(impLoad.rows.flatMap(r => r.streams.map(s => s.version_id)).filter(Boolean)).size}}</b></li>
-    <li>
-      Потоків, які вже є в БД (буде оновлено):
-      <b>{{impLoad.rows.flatMap(r => r.streams).filter(s =>
-        (D.disciplines || []).some(d =>
-          d.version_id === s.version_id &&
-          d.study_year === loadYear &&
-          d.semester === s.semester
-        )).length}}</b>
-    </li>
-  </ul>
-</div>
-
-      <div v-for="(r, ri) in impLoad.rows" :key="ri" class="card" style="border-left:4px solid #1f3a5f">
-        <p><b>{{r.name}}</b>
-          <span v-if="r.isPractice" style="color:#889">[практика]</span>
-          <span v-if="r.isQualification" style="color:#889">[кваліф. робота]</span>
-          <span v-if="r.streams.some(s => !s.version_id)" style="color:#c62828">
-            ⚠ без версії ОП: {{r.streams.filter(s => !s.version_id).map(s => s.groups.join(' + ')).join('; ')}}
-          </span>
-          <span v-if="r.unresolved.some(g => !/-\d{2}-\d+/.test(g))" style="color:#c62828">
-            ⚠ не розпізнано запис групи: {{r.unresolved.filter(g => !/-\d{2}-\d+/.test(g)).join(', ')}}
-          </span>
-        </p>
-        <table>
-          <tr><th>ОП</th><th>Курс</th><th>Сем.</th><th>Групи</th><th>Студ.</th>
-              <th>Лк</th><th>Пз</th><th>Лб</th><th>Конс</th><th>У плані</th></tr>
-          <tr v-for="(s, si) in r.streams" :key="si">
-            <td>{{s.opp_abbr}}<small v-if="s.spec" style="color:#667"> ({{s.spec}})</small> · {{s.entry_year}}<br><small v-if="s.special.length" style="color:#667">{{s.special.join(', ')}}</small>
-              <div v-if="!s.version_id" style="font-size:12px;color:#c62828">{{s.reason}}<br>
-                <select v-if="isAdmin" v-model="s.version_id" @change="$nextTick(() => rematch(r, s))">
-                  <option :value="null">— обрати версію вручну —</option>
-                  <option v-for="v in versions" :key="v.id" :value="v.id">{{lab('program_versions', v)}}</option>
-                </select>
-              </div></td>
-            <td>{{s.course || '—'}}</td>
-            <td>{{s.semester}}</td>
-            <td>{{s.groups.join(' + ')}}</td>
-            <td>{{s.students_count}}</td>
-            <td :style="s.diff && s.diff.lectures ? 'background:#fdecea' : ''">
-              <template v-if="s.diff && s.diff.lectures"><b>{{s.planHours.lectures}}</b><br><small style="color:#c62828;text-decoration:line-through" title="У файлі навантаження">{{s.hours.lectures}}</small></template>
-              <template v-else>{{s.planHours ? s.planHours.lectures : s.hours.lectures}}</template>
-            </td>
-            <td :style="s.diff && s.diff.practicals ? 'background:#fdecea' : ''">
-              <template v-if="s.diff && s.diff.practicals"><b>{{s.planHours.practicals}}</b><br><small style="color:#c62828;text-decoration:line-through" title="У файлі навантаження">{{s.hours.practicals}}</small></template>
-              <template v-else>{{s.planHours ? s.planHours.practicals : s.hours.practicals}}</template>
-            </td>
-            <td :style="s.diff && s.diff.labs ? 'background:#fdecea' : ''">
-              <template v-if="s.diff && s.diff.labs"><b>{{s.planHours.labs}}</b><br><small style="color:#c62828;text-decoration:line-through" title="У файлі навантаження">{{s.hours.labs}}</small></template>
-              <template v-else>{{s.planHours ? s.planHours.labs : s.hours.labs}}</template>
-            </td>
-            <td :style="s.diff && s.diff.consultations ? 'background:#fdecea' : ''">
-              <template v-if="s.diff && s.diff.consultations"><b>{{s.planHours.consultations}}</b><br><small style="color:#c62828;text-decoration:line-through" title="У файлі навантаження">{{s.hours.consultations}}</small></template>
-              <template v-else>{{s.planHours ? s.planHours.consultations : s.hours.consultations}}</template>
-            </td>
-            <td>
-              <span v-if="s.match && s.match.item && s.match.kind === 'exact'">✅ {{s.match.item.code || s.match.item.name_uk}}</span>
-              <span v-else-if="s.match && s.match.item" style="color:#b26a00">
-                ⚠ {{s.match.item.code || '—'}} <small>≈ {{s.match.item.name_uk}}</small>
-                <small>({{s.match.kind === 'prefix' ? 'часткова назва' : 'схожа назва'}})</small>
-              </span>
-              <span v-else-if="s.match && s.match.kind === 'ambiguous'" style="color:#c62828">⚠ неоднозначно: {{s.match.candidates.join(' | ')}}</span>
-              <span v-else-if="s.match && s.match.kind === 'noplan'" style="color:#b26a00">— плану ОП немає</span>
-              <span v-else style="color:#b26a00">⚠ не знайдено</span>
-              <div v-if="s.diff" style="font-size:12px;color:#c62828">⚠ години в навантаженні ≠ плану (взято з плану)</div>
-              <div v-if="s.offSem" style="font-size:12px;color:#c62828">⚠ у плані немає годин у {{s.semester}} семестрі</div>
-            </td>
-          </tr>
-        </table>
-      </div>
-
-      <p>
-        <label class="chk"><input type="checkbox" v-model="loadSkipNonDisc"> Пропустити практики й кваліф. роботи</label>
-        <label class="chk"><input type="checkbox" v-model="loadOnlyMatched"> Лише ті, де знайдено план</label>
-        <label class="chk"><input type="checkbox" v-model="loadSharedKey"> Об'єднувати однакові назви</label>
-      </p>
-      <p>
-        <button class="p" @click="impLoadApply" :disabled="!isAdmin && (!teacherCheck || teacherCheck.level === 'none')">Застосувати навантаження</button>
-        <button class="s" @click="impLoad=null">Скасувати</button>
-      </p>
-    </template>
-  </div>
 </section>
 
 <!-- Компетенції -->
@@ -3682,6 +3689,12 @@ const RELEASES=[
   'Перевірки узгодженості даних версії ОП (кредити, години, семестри, форми контролю, компетентності) і текстовий звіт про відмінності порівняно з попереднім роком.',
   'Попередження перед завантаженням ОПП, якщо не вказано гаранта програми.',
   'Єдиний вигляд кнопок, блоків і списків у всіх вкладках; навчальний план у «ОПП та НП» можна впорядкувати за кодом (ОК, ВК, без коду); у «Компетенціях» ширші поля, вибір навчального року в шапці береться з потоків дисциплін.',
+  'Нова вкладка «НП та ОПП» об’єднує всю роботу над ОПП і НП: спільний вибір версії ОП та кроки «Огляд → 1. Імпорт → 2. План → 3. Компетенції → 4. Матриця → 5. Текст ОПП → 6. Перевірка й експорт». Експорт НП і ОПП, перевірки та звіт змін — на кроці 6.',
+  '«Стан ОП» об’єднано з оглядом версій ОП: у таблиці видно план, компетентності, матрицю, текст ОПП і потоки, є фільтри за навчальним роком і станом, а також кнопки «Відкрити» та «⧉» (копія на новий рік).',
+  'Імпорт ОПП (.docx) тепер заодно записує тексти ОПП (профіль, затвердження, проєктна група, дескриптори НРК); у кроці «5. Текст ОПП» їх можна перевірити й за потреби імпортувати повторно.',
+ ]],
+ ['Для всіх користувачів',[
+  'Імпорт навантаження (xls) переїхав у вкладку «Дисципліни» (кнопка «Імпорт навантаження (xls)»); окремої вкладки «Імпорт» для викладача більше немає.',
  ]],
 ]},
 {v:'1.1',date:'',title:'Імпорт ОПП і навчальних планів, імпорт РПНД з файлу',groups:[
@@ -3744,10 +3757,10 @@ data(){return{
   sy:'',
 
   // НОВЕ — майстер імпорту:
-impStep:'opp',
+impStep:'opp', loadOpen:false, uTexts:null,
 // єдиний імпорт ОПП + НП
 fnames:{}, uVid:'', uDonor:'', uOpp:null, uPlanRaw:null, uOppHash:'', uPlanHash:'', uOppName:'', uPlanName:'', uRows:[], uOppOnly:[], uWarn:[], uBusy:false,
-uOpt:{meta:true, plan:true, delMissing:false, addOppOnly:false, comps:true, updTexts:false, matrix:true, ik:true},
+uOpt:{texts:true, meta:true, plan:true, delMissing:false, addOppOnly:false, comps:true, updTexts:false, matrix:true, ik:true},
 // редактор ОПП / НП
 ev:'', eMeta:null, eMeta0:'', eItems:[], eDel:[], eQ:'', eNoCode:false, eSort:'code', eOpen:{}, eBusy:false, CONTROLS, LEVELS,
 loadYear:new Date().getFullYear(), loadTeacher:null,
@@ -3763,8 +3776,7 @@ ckV:'', ckSev:'', rpA:'', rpB:'', OPPX:Object.freeze(OPPX), otV:'', otF:null, ot
   ['programs','Програми'],
   ['np','НП та ОПП'],
   ['disciplines','Дисципліни'],
-  ['import','Імпорт'],
-  ['assign','Призначення'],
+    ['assign','Призначення'],
   ['doc','Документ'],
   ['approvals','Затвердження'],
   ['templates','Шаблони'],
@@ -3936,7 +3948,7 @@ if(mx&&(mx.plus.length||mx.minus.length))m.push('Вибір компетенці
 +(mx.plus.length?': не обрано '+mx.plusCodes.join(', '):'')+(mx.minus.length?(mx.plus.length?'; ':': ')+'обрано, але немає в матриці '+mx.minusCodes.join(', '):'')
 +' (кнопка «Підтягнути компетентності з матриці ОП» у розділі «1–2» або вкладка «Компетенції»)')}
 return m.concat(this.calc.warns)},
-visibleTabs(){return this.isAdmin?this.tabs:[['disciplines','Мої дисципліни'],['import','Імпорт навантаження'],['assign','Компетенції'],['doc','Документ'],['sig','Мій підпис'],['news','Що нового']]},
+visibleTabs(){return this.isAdmin?this.tabs:[['disciplines','Мої дисципліни'],['assign','Компетенції'],['doc','Документ'],['sig','Мій підпис'],['news','Що нового']]},
 relView(){return this.RELEASES.map(r=>({...r,groups:r.groups.map(g=>({t:g[0],items:g[1].map(i=>typeof i==='string'?{t:i}:{t:i[0],a:i[1]==='a'}).filter(i=>r.all||this.isAdmin||!i.a)})).filter(g=>g.items.length)}))},
 docStat(){const list=this.tab==='disciplines'?this.rowsOf('disciplines'):this.tab==='stats'?this.statRows.map(r=>r.d):[];
 const m={};for(const d of list)m[d.id]=this.docStatusOf(d);return m},
@@ -4329,7 +4341,7 @@ async pfSave(){const pf=this.pf,P=PER[pf.tab],iss=this.pfIssues;
    if(cur&&cur.faculty_id){const{error:ue}=await sb.from('departments').update({faculty_id:cur.faculty_id}).eq('id',eid);if(ue)throw ue}}
   this.D[pf.tab]=await all(pf.tab);this.applyPeriods();this.pf=null;this.notify('Збережено')}
  catch(e){this.err(e)}},
-go(t){if(t==='np')t=this.npLast||'program_versions';if(this.NPT.includes(t)){this.npLast=t;if(!this.npV){try{const k=localStorage.getItem('npV');if(k&&(this.D.program_versions||[]).some(v=>v.id===k))this.npPick(k,true)}catch(_){}}}this.tab=t;this.form=null;this.pf=null;this.resetView();if(t==='import'&&!this.isAdmin){this.impStep='load';this.loadOnlyMatched=true}},
+go(t){if(t==='np')t=this.npLast||'program_versions';if(this.NPT.includes(t)){this.npLast=t;if(!this.npV){try{const k=localStorage.getItem('npV');if(k&&(this.D.program_versions||[]).some(v=>v.id===k))this.npPick(k,true)}catch(_){}}}this.tab=t;this.form=null;this.pf=null;this.resetView();if(t==='disciplines'&&!this.isAdmin)this.loadOnlyMatched=true},
 prep(f){if(this.tab==='disciplines'){if(!f.id&&!f.department_id)f.department_id=this.profile.department_id||null;f.params=f.params||{};f.params.day=f.params.day||{};f.params.part=f.params.part||{};f.teachers=(this.D.discipline_teachers||[]).filter(x=>x.discipline_id===f.id).map(x=>x.user_id)}return f},
 edit(r){this.form=this.prep(JSON.parse(JSON.stringify(r)))},
 addNew(){this.form=this.prep({})},
@@ -4833,6 +4845,12 @@ async uOppFile(ev) {
   if (!f) return;
   try {
     this.uOpp = await parseOPP(f);
+    this.uTexts = null;
+    try {   // тексти ОПП (профіль, затвердження, НРК…) — необов’язкова частина; помилка не блокує решту імпорту
+      const { value: html } = await mammoth.convertToHtml({ arrayBuffer: await f.arrayBuffer() });
+      const tr = OPPX.parseTexts(html, DOMParser);
+      if (tr.found.length) this.uTexts = tr;
+    } catch (_) { this.uTexts = null; }
     this.uOppHash = await fileHash(f);
     this.uOppName = f.name;
     this.uAutoVersion();
@@ -4901,7 +4919,7 @@ uPickDonor() {
   if (!d.some(x => x.id === this.uDonor)) this.uDonor = this.uOpp && this.uOpp.competencies.some(c => !c.text) && d.length ? d[0].id : '';
 },
 uRemoveRow(i) { this.uRows.splice(i, 1); },
-uCancel() { this.uOpp = null; this.uPlanRaw = null; this.uRows = []; this.uOppOnly = []; this.uWarn = []; },
+uCancel() { this.uOpp = null; this.uTexts = null; this.uPlanRaw = null; this.uRows = []; this.uOppOnly = []; this.uWarn = []; },
 async uApply() {
   const v = this.uVid;
   if (!v) return this.notify('Оберіть версію ОП', 'err');
@@ -4911,6 +4929,7 @@ async uApply() {
   const doPlan = o.plan && this.uFinalRows.length;
   const doComps = o.comps && this.uOpp && this.uOpp.competencies.length;
   const doMx = this.uOpp && ((o.matrix && this.uOpp.matrix.length) || o.ik);
+  const doTexts = o.texts && this.uTexts && this.uTexts.found.length && !this.oppMissing;
   const mxN = o.matrix ? this.uOpp.matrix.length : 0;
   if (doMeta) parts.push('• програма: ' + this.oppDiff.filter(r => r.changed).map(r => r.label).join(', '));
   if (doPlan) {
@@ -4919,6 +4938,7 @@ async uApply() {
   }
   if (doComps) parts.push(`• компетентності: нових ${this.uComps.filter(c => c.state === 'new').length}` + (o.updTexts ? `, оновиться текстів ${this.uComps.filter(c => c.state === 'changed').length}` : ''));
   if (doMx) parts.push('• матриця: ' + [mxN ? `«+» для ${mxN} ОК (поточні відмітки цих ОК буде замінено)` : '', o.ik ? 'ІК для всіх дисциплін' : ''].filter(Boolean).join(' + '));
+  if (doTexts) parts.push(`• тексти ОПП: ${this.uTexts.found.length} полів (наявні значення цих полів буде замінено)`);
   if (!parts.length) return this.notify('Нічого записувати — увімкніть хоча б один пункт або змініть дані', 'warn');
   if (!confirm('Записати у версію «' + this.lab('program_versions', (this.D.program_versions || []).find(x => x.id === v)) + '»:\n' + parts.join('\n'))) return;
   this.uBusy = true;
@@ -4928,13 +4948,28 @@ async uApply() {
     if (doPlan) { const r = await this.uApplyPlan(); done.push(`план (+${r.ins} ~${r.upd}${r.del ? ' −' + r.del : ''})`); }
     if (doComps) { const r = await this.uApplyComps(); done.push(`компетентності (+${r.ins}${r.upd ? ' ~' + r.upd : ''})`); }
     if (doMx) { const r = await this.uApplyMatrix(); done.push(`матриця (${r.cells} відміток${r.ik ? ', ІК: ' + r.ik + ' дисциплін' : ''})`); if (r.bad.length) warn.push('Не знайдено компетентностей для матриці: ' + r.bad.join(', ')); }
+    if (doTexts) { const r = await this.uApplyTexts(); done.push(`тексти ОПП (${r.n} полів)`); }
     this.notify('Записано: ' + done.join('; ') + (warn.length ? '. ⚠ ' + warn.join('; ') : ''), warn.length ? 'warn' : 'ok');
     this.uCancel();
-    if (this.ev === v) this.eLoad();
+    if (this.npV !== v) this.npPick(v); else if (this.ev === v) this.eLoad();
   } catch (e) {
     this.err(e);
     if (done.length) this.notify('Частково записано: ' + done.join('; ') + '. Помилка на наступному кроці — повторіть імпорт (дані оновлюються на місці).', 'warn');
   } finally { this.uBusy = false; }
+},
+async uApplyTexts() {
+  const v = this.uVid, d = this.uTexts.data;
+  const row = (this.D.opp_texts || []).find(x => x.version_id === v);
+  const cur = JSON.parse(JSON.stringify((row && row.data) || {}));
+  Object.keys(d).forEach(k => {
+    if (k === 'nrk_text') cur.nrk_text = Object.assign({}, cur.nrk_text, d.nrk_text);
+    else cur[k] = d[k];
+  });
+  const { error } = await sb.from('opp_texts').upsert({ version_id: v, data: cur, updated_by: this.session.user.id });
+  if (error) throw error;
+  this.D.opp_texts = await all('opp_texts');
+  if (this.otV === v) this.otLoad();
+  return { n: this.uTexts.found.length };
 },
 async uApplyMeta() {
   const v = (this.D.program_versions || []).find(x => x.id === this.uVid);
