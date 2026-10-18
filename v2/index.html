@@ -153,7 +153,6 @@ main button.p:disabled,.card button.p:disabled{opacity:.55}
 main button.ed-b,main button.del-b,main button.dst,.card button.ed-b,.card button.del-b,.card button.dst{min-width:32px;padding:0 8px;font-size:15px}
 main .mx .xdel{min-height:0;display:inline;font-size:11px;padding:0 0 3px;border:0;background:none}
 main .mx .xdel:hover:not(:disabled){background:none;border:0}
-table.ed button{min-height:26px;padding:0 8px}
 .fpick .b{padding:0 14px;border-radius:4px}
 main select,.card select{vertical-align:middle}
 .tb select,.tb input:not([type=checkbox]):not([type=radio]):not([type=file]),p>select{height:32px}
@@ -163,6 +162,16 @@ h3>button{margin-left:10px;vertical-align:middle}
 input[type=checkbox]{accent-color:#1f3a5f;width:17px;height:17px;cursor:pointer;vertical-align:middle}
 table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
 .fpick.inl{display:inline-flex;vertical-align:middle;margin:0 6px!important}
+
+/* ===== UI-KIT 3 ===== */
+.acts{gap:0}
+main button.act-b,.card button.act-b{min-width:32px;padding:0 8px;font-size:15px}
+.in32{height:32px;vertical-align:middle}
+table.apv td{vertical-align:middle}
+table.apv input:not([type=checkbox]){height:32px;width:100%;margin:0}
+table.apv td>input[type=checkbox]{display:block;width:22px;height:22px;margin:0}
+table.dsc td.cb{white-space:nowrap;font-size:13px}
+table.dsc td.cb input{margin-right:4px}
 </style>
 </head>
 <body>
@@ -414,19 +423,20 @@ table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
 <span style="color:#667;font-size:13px">Показано {{viewRows.length}} з {{rowsOf(tab).length}}</span>
 <button class="s" v-if="q||sk||Object.values(cf).some(Boolean)" @click="resetView">Скинути фільтри</button>
 </div>
-<table>
-<tr><th v-for="f in T[tab].f" :key="f.k" class="sortable" :title="(hint(f)?hint(f)+' — ':'')+'натисніть, щоб сортувати'" @click="sortBy(f)">{{f.l}} <span style="color:#889">{{sk===f.k?(sd>0?'▲':'▼'):'⇅'}}</span></th><th v-if="tab==='programs'">Гарант / керівник ОП</th><th v-if="tab==='programs'">Стан</th><th v-if="tab==='program_versions'">План</th><th v-if="tab==='program_versions'">Компетентності, матриця, текст</th><th v-if="tab==='program_versions'">Потоки</th><th v-if="tab==='disciplines'" class="sortable" @click="sortBy({k:'__teacher'})">Викладачі <span style="color:#889">{{sk==='__teacher'?(sd>0?'▲':'▼'):'⇅'}}</span></th><th></th></tr>
-<tr class="flt" v-if="T[tab].f.some(f=>f.ref||f.opts)||tab==='disciplines'"><td v-for="f in T[tab].f" :key="f.k">
+<table :class="{dsc:tab==='disciplines'}">
+<tr><th v-for="f in T[tab].f.filter(x=>!x.noCol)" :key="f.k" class="sortable" :style="f.w?{width:f.w+'px'}:null" :title="(f.sl?f.l+'. ':'')+(hint(f)?hint(f)+' — ':'')+'натисніть, щоб сортувати'" @click="sortBy(f)">{{f.sl||f.l}} <span style="color:#889">{{sk===f.k?(sd>0?'▲':'▼'):'⇅'}}</span></th><th v-if="tab==='programs'">Гарант / керівник ОП</th><th v-if="tab==='programs'">Стан</th><th v-if="tab==='program_versions'">План</th><th v-if="tab==='program_versions'">Компетентності, матриця, текст</th><th v-if="tab==='program_versions'">Потоки</th><th v-if="tab==='disciplines'" class="sortable" @click="sortBy({k:'__teacher'})">Викладачі <span style="color:#889">{{sk==='__teacher'?(sd>0?'▲':'▼'):'⇅'}}</span></th><th v-if="tab==='disciplines'&&!isAdmin" title="Коли ви завантажили файл, перевірили його і все гаразд — поставте позначку. Її бачить адміністратор (для статистики).">РПНД готовий</th><th v-if="tab==='disciplines'&&!isAdmin" title="Позначка бачить адміністратор (для статистики)">Силабус готовий</th><th></th></tr>
+<tr class="flt" v-if="T[tab].f.some(f=>f.ref||f.opts)||tab==='disciplines'"><td v-for="f in T[tab].f.filter(x=>!x.noCol)" :key="f.k">
 <select v-if="f.ref||f.opts" v-model="cf[f.k]"><option :value="undefined">Усі</option><option v-for="o in opts(f)" :key="o.id" :value="o.id">{{o.l}}</option></select></td><td v-if="tab==='programs'"></td><td v-if="tab==='programs'"></td><td v-if="tab==='program_versions'"></td><td v-if="tab==='program_versions'"></td><td v-if="tab==='program_versions'"></td><td v-if="tab==='disciplines'">
-<select v-model="cf.__teacher"><option :value="undefined">Усі викладачі</option><option v-for="p in teacherOpts" :key="p.id" :value="p.id">{{lab('profiles',p)}}</option></select></td><td></td></tr>
+<select v-model="cf.__teacher"><option :value="undefined">Усі викладачі</option><option v-for="p in teacherOpts" :key="p.id" :value="p.id">{{lab('profiles',p)}}</option></select></td><td v-if="tab==='disciplines'&&!isAdmin" colspan="2"></td><td></td></tr>
 <tr v-for="r in viewRows" :key="r.id" :class="{sel:tab==='program_versions'&&r.id===npV}">
-  <td v-for="f in T[tab].f" :key="f.k">{{show(r,f)}}</td>
+  <td v-for="f in T[tab].f.filter(x=>!x.noCol)" :key="f.k">{{show(r,f)}}</td>
   <td v-if="tab==='programs'" style="min-width:210px">
     <div v-for="g in perList('programs',r.id)" :key="g.id">{{g.guarantor||'—'}}<small>{{perText(g)}}</small></div>
     <div v-if="!perList('programs',r.id).length" style="color:#b26a00">не вказано</div>
     <button class="s" @click="pfOpen('programs',r.id)">✎ за роками</button>
   </td>
   <td v-if="tab==='disciplines'"><span v-if="teachersOf(r)">{{teachersOf(r)}}</span><span v-else style="color:#c62828">не призначено</span></td>
+  <td v-for="col in ['rpnd_done_at','syllabus_done_at']" :key="col" v-if="tab==='disciplines'&&!isAdmin" class="cb"><label><input type="checkbox" :checked="!!flag(r,col)" @change="flagChange($event,r,col)">{{flag(r,col)?fmt(flag(r,col)):''}}</label></td>
 
   <!-- Стан ОП: компактно, в окремих колонках -->
   <td v-if="tab==='program_versions'" style="font-size:13px;white-space:nowrap">
@@ -450,7 +460,7 @@ table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
       <small style="display:inline;color:#667">· позицій {{programSummary[r.id].total_plan_items}} · потоків {{programSummary[r.id].total_disciplines}}</small></template>
   </td>
 
-  <td><div class="acts"><button v-if="tab==='disciplines'" class="s" title="Призначення: викладачі й компетенції цієї дисципліни" @click="ad=r.id;go('assign')">👥</button>
+  <td><div class="acts"><button v-if="tab==='disciplines'" class="s act-b" title="Призначення: викладачі й компетенції цієї дисципліни" @click="ad=r.id;go('assign')">🧩</button>
 <button v-if="tab==='disciplines'" class="s dst" :class="'dst-'+(docStat[r.id]||{}).level" :title="docTip(r)" @click="openDoc(r)">▤</button>
 <button v-if="tab==='program_versions'" class="s" title="Відкрити версію ОП: план, компетенції, матриця, текст" @click="npOpen(r,'opp')">Відкрити ➜</button>
 <button v-if="tab==='program_versions'" class="s" title="Створити копію цієї версії на інший рік набору" @click="cloneRow(r)">⧉</button>
@@ -500,14 +510,7 @@ table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
 <button class="p" @click="save">Зберегти</button>
 <button class="s" @click="form=null">Скасувати</button>
 </div>
-<template v-if="tab==='disciplines'&&!isAdmin">
-<h3>Готовність документів</h3>
-<small>Коли ви завантажили файл, перевірили його і все гаразд — поставте позначку. Її бачить адміністратор (для статистики).</small>
-<table><tr><th>Дисципліна</th><th>РПНД готовий</th><th>Силабус готовий</th></tr>
-<tr v-for="d in rowsOf('disciplines')" :key="d.id"><td>{{d.name}}</td>
-<td v-for="col in ['rpnd_done_at','syllabus_done_at']" :key="col"><label><input type="checkbox" :checked="!!flag(d,col)" @change="flagChange($event,d,col)"> {{flag(d,col)?fmt(flag(d,col)):''}}</label></td></tr>
-</table>
-</template>
+
 </section>
 
 <section v-else-if="tab==='checks'">
@@ -517,10 +520,10 @@ table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
     <b>⬇ Експорт</b>
     <p class="hint" style="margin:2px 0 8px">Файли формуються з бази за шаблонами (вкладка «Шаблони»). Помилки перевірок нижче експорт не блокують, але варто їх переглянути.</p>
     <div class="tb">
+      <button class="p" @click="oppDownload">⬇ ОПП (.docx)</button>
       <button class="p" @click="npDownload" :disabled="npBusy">⬇ НП (.xlsx)</button>
       <label class="chk" style="display:inline-flex;gap:6px;align-items:center;margin:0"><input type="checkbox" v-model="npRem" style="width:auto"> видаляти рядки НП, яких немає в БД</label>
       <span class="sp"></span>
-      <button class="p" @click="oppDownload">⬇ ОПП (.docx)</button>
     </div>
     <p v-if="ckRes&&ckRes.counts.err" class="hint" style="color:#c62828;margin:6px 0 0">✖ Є помилки перевірок: {{ckRes.counts.err}}.</p>
   <div v-if="npRep" class="form" style="margin-top:10px;border-top:1px solid #e3e7ef;padding-top:8px">
@@ -702,8 +705,8 @@ table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
               <td style="width:52px"><input v-model="it.hours_consultations" inputmode="decimal"></td>
               <td style="text-align:center">{{eLinked(it) || ''}}</td>
               <td style="white-space:nowrap">
-                <button class="s" :title="'Додатково: назва англійською, розділ, години по семестрах'" @click="eOpen[it._k]=!eOpen[it._k]">{{eOpen[it._k] ? '▲' : '▼'}}</button>
-                <button class="s" title="Видалити позицію" @click="eRemove(it)">✕</button>
+                <button class="s act-b" :title="'Додатково: назва англійською, розділ, години по семестрах'" @click="eOpen[it._k]=!eOpen[it._k]">{{eOpen[it._k] ? '▲' : '▼'}}</button>
+                <button class="s del-b" title="Видалити позицію" @click="eRemove(it)">✕</button>
               </td>
             </tr>
             <tr v-if="eOpen[it._k]" class="det">
@@ -722,11 +725,11 @@ table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
                       <td>{{s}}</td>
                       <td v-for="k in ['lectures','practicals','labs','consultations','total','self']" :key="k" style="width:64px"><input v-model.number="it.hours_by_semester[s][k]" type="number" min="0"></td>
                       <td style="width:130px"><input v-model="it.hours_by_semester[s].control" list="ctrl-types"></td>
-                      <td><button class="s" @click="eDelSem(it,s)">✕</button></td>
+                      <td><button class="s del-b" @click="eDelSem(it,s)">✕</button></td>
                     </tr>
                   </table>
                   <span v-else style="font-size:13px;color:#667">{{eSems(it).length ? 'один семестр: ' + eSems(it)[0] : 'годин по семестрах немає'}}</span>
-                  <span style="margin-left:8px">+ семестр <input v-model="it._ns" type="number" min="1" max="12" style="width:60px;display:inline-block"> <button class="s" @click="eAddSem(it)">Додати</button></span>
+                  <span style="margin-left:8px">+ семестр <input class="in32" v-model="it._ns" type="number" min="1" max="12" style="width:60px;display:inline-block"> <button class="s" @click="eAddSem(it)">Додати</button></span>
                 </div>
               </td>
             </tr>
@@ -928,9 +931,9 @@ table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
 <td class="cd"><input v-model="c.code" style="width:100%" @change="saveCode(c)"></td>
 <td><textarea v-model="c.text" @change="saveComp(c)"></textarea></td>
 <td class="ac">
-<button class="s" @click="move(c,-1)">↑</button>
-<button class="s" @click="move(c,1)">↓</button>
-<button class="s d" @click="delComp(c)">✕</button></td>
+<button class="s act-b" @click="move(c,-1)">↑</button>
+<button class="s act-b" @click="move(c,1)">↓</button>
+<button class="s del-b" @click="delComp(c)">✕</button></td>
 </tr>
 </table>
 </template>
@@ -1146,11 +1149,11 @@ table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
 <div class="tb"><label>Рік: <select v-model.number="ay"><option v-for="y in YEARS" :key="y" :value="y">{{y}}</option></select></label>
 <button class="s" @click="copyPrev">Скопіювати з {{ay-1}} року</button></div>
 <h3>Факультети</h3>
-<table><tr><th>Факультет</th><th v-for="c in APF" :key="c[0]">{{c[1]}}</th></tr>
+<table class="apv"><tr><th>Факультет</th><th v-for="c in APF" :key="c[0]">{{c[1]}}</th></tr>
 <tr v-for="f in actEnts('faculties')" :key="f.id"><td>{{entAt('faculties',f.id,ay).name}}</td>
 <td v-for="c in APF" :key="c[0]"><input v-if="c[2]==='checkbox'" type="checkbox" :checked="!!ap('faculty_approvals','faculty_id',f.id)[c[0]]" @change="setAp('faculty_approvals','faculty_id',f.id,c[0],$event.target.checked)"><input v-else :type="c[2]" :value="ap('faculty_approvals','faculty_id',f.id)[c[0]]" @change="setAp('faculty_approvals','faculty_id',f.id,c[0],$event.target.value)"></td></tr></table>
 <h3>Кафедри</h3>
-<table><tr><th>Кафедра</th><th v-for="c in APD" :key="c[0]">{{c[1]}}</th></tr>
+<table class="apv"><tr><th>Кафедра</th><th v-for="c in APD" :key="c[0]">{{c[1]}}</th></tr>
 <tr v-for="d in actEnts('departments')" :key="d.id"><td>{{entAt('departments',d.id,ay).name}}</td>
 <td v-for="c in APD" :key="c[0]"><input v-if="c[2]==='checkbox'" type="checkbox" :checked="!!ap('department_approvals','department_id',d.id)[c[0]]" @change="setAp('department_approvals','department_id',d.id,c[0],$event.target.checked)"><input v-else :type="c[2]" :value="ap('department_approvals','department_id',d.id)[c[0]]" @change="setAp('department_approvals','department_id',d.id,c[0],$event.target.value)"></td></tr></table>
 </section>
@@ -1212,7 +1215,7 @@ table td>input[type=checkbox]:only-child{display:block;margin:0 auto}
 
 <!-- Призначення -->
 <section v-else-if="tab==='assign'">
-<h3>Компетенції та викладачі дисципліни</h3>
+<h3>Компетенції та викладачі дисципліни <button class="s" @click="go('disciplines')" style="font-weight:normal">← до списку дисциплін</button></h3>
 <select v-model="ad"><option value="">— оберіть дисципліну —</option>
 <template v-for="g in discOpts" :key="g.year">
 <optgroup :label="g.year?g.year+'/'+(g.year+1)+' н.р.':'Без навчального року'">
@@ -1296,7 +1299,7 @@ faculties:{label:'Факультети',sigs:[['faculty-dean','Підпис де
 departments:{label:'Кафедри',sigs:[['department-head','Підпис завідувача кафедри']],f:[{k:'faculty_id',l:'Факультет',ref:'faculties'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'head',l:'Завідувач'}]},
 programs:{label:'Освітні програми',f:[{k:'department_id',l:'Кафедра',ref:'departments'},{k:'name',l:'Назва'},{k:'abbr',l:'Скорочення'},{k:'specialty_code',l:'Код спеціальності'},{k:'specialty_name',l:'Спеціальність'},{k:'education_level',l:'Рівень',opts:LEVELS}]},
 program_versions:{label:'Версії ОП (рік набору)',f:[{k:'program_id',l:'Програма',ref:'programs'},{k:'entry_year',l:'Рік набору',opts:YEARS}]},
-disciplines:{label:'Дисципліни',f:[{k:'version_id',l:'Версія ОП',ref:'program_versions'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'code',l:'Код'},{k:'name',l:'Назва'},{k:'type',l:'Тип'},{k:'ects',l:'Кредити ЄКТС',num:true},{k:'language',l:'Мова'},{k:'control_type',l:'Форма контролю'}]},
+disciplines:{label:'Дисципліни',f:[{k:'version_id',l:'Версія ОП',ref:'program_versions'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'code',l:'Код'},{k:'name',l:'Назва'},{k:'type',l:'Тип',w:90},{k:'ects',l:'Кредити ЄКТС',sl:'ЄКТС',num:true,w:56},{k:'language',l:'Мова',noCol:true},{k:'control_type',l:'Форма контролю',sl:'Контроль',w:96}]},
 profiles:{label:'Користувачі',noAdd:true,noDel:true,sigs:[['profile','Підпис викладача']],f:[{k:'email',l:'Email (для входу)',ro:true},{k:'full_name',l:'ПІБ'},{k:'full_name_long',l:'Повне ПІБ (для силабусу)'},{k:'position',l:'Посада'},{k:'department_id',l:'Кафедра',ref:'departments'},{k:'role',l:'Роль',opts:['teacher','admin']}]}
 };
 const TABLES=[...Object.keys(T),'competencies','discipline_competencies','discipline_teachers','documents','faculty_approvals','department_approvals','matrix_columns','matrix_cells','curricula','curriculum_items'];
@@ -3734,7 +3737,10 @@ const RELEASES=[
   'Нова вкладка «НП та ОПП» об’єднує всю роботу над ОПП і НП: спільний вибір версії ОП та кроки «Огляд → 1. Імпорт → 2. План → 3. Компетенції → 4. Матриця → 5. Текст ОПП → 6. Перевірка й експорт». Експорт НП і ОПП, перевірки та звіт змін — на кроці 6.',
   '«Стан ОП» об’єднано з оглядом версій ОП: у таблиці видно план, компетентності, матрицю, текст ОПП і потоки, є фільтри за навчальним роком і станом, а також кнопки «Відкрити» та «⧉» (копія на новий рік).',
   'Єдина висота кнопок; основні кнопки («Зберегти», «Завантажити», «⬇ НП», «⬇ ОПП») мають помітну заливку; кнопки вибору файлу в «Шаблонах», «Моєму підписі» й підписах користувачів у загальному стилі; оформлено галочки; виправлено відступи кнопок.',
-  'У таблиці «Дисципліни» з’явилась кнопка 👥: відкриває «Призначення» саме цієї дисципліни.',
+  'У таблиці «Дисципліни» з’явилась кнопка 🧩: відкриває «Призначення» саме цієї дисципліни.',
+  'У таблиці «Дисципліни» позначки «РПНД готовий» і «Силабус готовий» (для викладача) тепер стовпчики самої таблиці, а не окремий список внизу; стовпчик «Мова» не показується, «Кредити ЄКТС» і «Форма контролю» вужчі, «Назва» ширша.',
+  'Кнопка переходу в «Призначення» (🧩) має однакову ширину з іншими кнопками дій; у «Призначенні» є кнопка «← до списку дисциплін»; менші відступи між кнопками дій; галочки дозволу підписів у «Затвердженнях» більші й вирівняні по центру рядка.',
+  'Кроки «План» і «Компетенції»: кнопки ▼, ↑, ↓, ✕ та «Додати» семестр мають єдині висоту й стиль; на кроці 6 кнопки експорту стоять в один ряд.',
   'Копіювання версії ОП: при помилці показується крок і причина, а повністю створена копія більше не видаляється через збій оновлення екрана.',
   'Імпорт ОПП: якщо такої ОПП (або її версії на цей рік) ще немає в базі, замість оновлення даних програми пропонується створити нову ОПП / версію ОП. Якщо вибрана вгорі версія не збігається з файлом, програма запитає, куди імпортувати.',
   'Імпорт ОПП (.docx) тепер заодно записує тексти ОПП (профіль, затвердження, проєктна група, дескриптори НРК); у кроці «5. Текст ОПП» їх можна перевірити й за потреби імпортувати повторно.',
