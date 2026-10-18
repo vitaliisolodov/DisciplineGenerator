@@ -3324,10 +3324,11 @@ function context(D,vid,o){
  const row=(D.opp_texts||[]).find(r=>r.version_id===vid),data=(row&&row.data)||{};
  const items=(function(){const c=(D.curricula||[]).find(x=>x.version_id===vid);return c?(D.curriculum_items||[]).filter(i=>i.curriculum_id===c.id).sort((a,b)=>((a.sort==null?1e9:a.sort)-(b.sort==null?1e9:b.sort))):[]})();
  const t={};FIELD_KEYS.forEach(k=>{t[k]=String(data[k]==null?'':data[k])});
+ t.qualification=t.qualification.trim().replace(/\.$/,'');
  const blankLine='«____»_________ 20__ р. № ____';['council_changes','order_changes'].forEach(k=>{if(!t[k].trim())t[k]=blankLine});
  const lvl={'бакалаврський':'першого (бакалаврського) рівня','магістерський':'другого (магістерського) рівня','освітньо-науковий':'третього (освітньо-наукового) рівня'}[prog.education_level]||prog.education_level||'';
  const comp=k=>(D.competencies||[]).filter(c=>c.version_id===vid&&c.kind===k).sort((a,b)=>(a.sort||0)-(b.sort||0));
- const lst=a=>a.map(c=>({code:c.code,label:disp(c.code),text:c.text}));
+ const lst=a=>a.map(c=>({code:c.code,label:disp(c.code),num:String(c.code).split('.').pop(),text:c.text}));
  return{t,program_name:prog.name||'',program_abbr:prog.abbr||'',level_text:lvl,specialty_code:prog.specialty_code||'',specialty_name:prog.specialty_name||'',
   specialty:[prog.specialty_code,prog.specialty_name].filter(Boolean).join(' '),entry_year:ver.entry_year||'',
   faculty:fac.name||'',department:dep.name||'',guarantor:prog.guarantor||'',
@@ -3359,7 +3360,7 @@ function parseTexts(html,DP){
  // титул
  let m;
  if((m=all.match(/галузі знань\s+(.+)/i)))set('field_of_knowledge',m[1]);
- if((m=all.match(/Кваліфікація:\s*(.+)/i)))set('qualification',m[1]);
+ if((m=all.match(/Кваліфікація:\s*(.+)/i)))set('qualification',m[1].trim().replace(/\.$/,''));
  if((m=all.match(/\(протокол від\s+(.+?)\)\s*\n/i)))set('council_protocol',m[1]);
  if((m=all.match(/вводиться в дію з\s+(.+)/i)))set('effective_date',m[1]);
  if((m=all.match(/\(наказ від\s+(.+?)\)\s*\n/i)))set('order',m[1]);
@@ -3374,8 +3375,8 @@ function parseTexts(html,DP){
  if(iE>=0&&iS>iE){const L=pt.slice(iE+1,iS).filter(Boolean);
   // абзаци без підпису склеюємо в один запис (посада на кількох рядках)
   const rec=[];let cur=[];L.forEach(l=>{cur.push(l);if(/_{3,}|\t/.test(l)){rec.push(cur.join(' '));cur=[]}});if(cur.length)rec.push(cur.join(' '));
-  set('employers',rec.map(x=>x.replace(/\s*_{3,}\s*/g,'   ').replace(/\s+/g,' ').trim()).join('\n'))}
- if(iS>=0&&iR>iS)set('student_rep',pt.slice(iS+1,iR).filter(Boolean).join(' ').replace(/\s*_{3,}\s*/g,'   ').replace(/\s+/g,' '));
+  set('employers',rec.map(x=>x.replace(/\s*_{3,}\s*/g,'  ______________  ').replace(/\s+/g,' ').trim()).join('\n'))}
+ if(iS>=0&&iR>iS)set('student_rep',pt.slice(iS+1,iR).filter(Boolean).join(' ').replace(/\s*_{3,}\s*/g,'  ______________  ').replace(/[ \t]+/g,' '));
  // проєктна група — з «Передмови» (повні дані)
  const iP=idx(/^ПЕРЕДМОВА/);
  if(iP>=0){const sl=pt.slice(iP);const iL=sl.findIndex(x=>/^Керівник проєктної групи/i.test(x)),iM=sl.findIndex(x=>/^Члени проєктної групи/i.test(x));
@@ -3402,7 +3403,7 @@ function parseTexts(html,DP){
  if(prof){let afterPurpose=false;[...prof.rows].forEach(r=>{const cs=[...r.cells];
    if(cs.length===1){const tx=cs[0].textContent.trim();if(/^2\s*-\s*Мета/.test(tx)){afterPurpose=true;return}if(afterPurpose&&tx.length>30&&!/^\d\s*-/.test(tx)){set('purpose',cellLines(cs[0]).join('\n'));afterPurpose=false}return}
    if(cs.length<2)return;const lab=cs[0].textContent.replace(/\s+/g,'');const lines=cellLines(cs[1]);
-   if(/^Ступіньвищоїосвіти/.test(lab)){set('degree',lines[0]);set('qualification',lines.slice(1).join(' ')||data.qualification);return}
+   if(/^Ступіньвищоїосвіти/.test(lab)){set('degree',lines[0]);set('qualification',(lines.slice(1).join(' ')||data.qualification||'').trim().replace(/\.$/,''));return}
    const hit=PROFILE_MAP.find(([k])=>lab.startsWith(k));if(hit)set(hit[1],lines.join('\n'))})}
  // ЗК/ФК → дескриптори НРК
  const nrk=tables.find(t=>/Класифікація компетентностей за НРК/.test(t.rows[0]&&t.rows[0].textContent));
@@ -3427,10 +3428,7 @@ function parseTexts(html,DP){
  const need=['institution','purpose','orientation','focus','features','employability','teaching','assessment','staff','material','info'];
  need.filter(k=>!data[k]).forEach(k=>W.push('Не знайдено: '+((OPPX_LABEL||{})[k]||k)));
  return{data,found:[...new Set(found)],warnings:W}}
-// Поля, що залежать від року затвердження — при клонуванні версії очищаються
-const YEAR_FIELDS=['council_protocol','council_changes','effective_date','order','order_changes','publish_year'];
-const cloneData=d=>{const o=JSON.parse(JSON.stringify(d||{}));YEAR_FIELDS.forEach(k=>{if(k in o)o[k]=''});return o};
-return{cloneData,YEAR_FIELDS,parseTexts,SECTIONS,FIELD_KEYS,DESC_GROUPS,parseDesc,blank,context,componentsXml,matrixXml,nrkXml,prnCompXml,lines}
+return{parseTexts,SECTIONS,FIELD_KEYS,DESC_GROUPS,parseDesc,blank,context,componentsXml,matrixXml,nrkXml,prnCompXml,lines}
 })();
 // ===== V2-OPP END =====
 // ===== V2-NP BEGIN =====
@@ -4623,7 +4621,7 @@ otToggle(mapName,row,col){const m=this.otF[mapName],a=m[row]||[],i=a.indexOf(col
 otHas(mapName,row,col){return((this.otF[mapName]||{})[row]||[]).includes(col)},
 async oppDownload(){try{const vid=this.otV;if(!vid)return;
 let ab;{const{data:tb,error:te}=await sb.storage.from('templates').download('opp.docx');if(te||!tb)throw new Error('Шаблон ОПП не завантажено (вкладка «Шаблони»)');ab=await tb.arrayBuffer()}
-const ctx=OPPX.context(this.D,vid,{entAt:(t,i,y)=>this.entAt(t,i,y)});
+const ctx=OPPX.context(this.D,vid,{entAt:(t,i,y)=>this.entAt(t,i,y)});if(!String(ctx.guarantor||'').trim())this.notify('Увага: не вказано гаранта ОП (вкладка «Програми») — у ОПП поле буде порожнім','err');
 const doc=new window.docxtemplater(new PizZip(ab),{parser:tagParser,delimiters:{start:'{{',end:'}}'},paragraphLoop:true,linebreaks:true,nullGetter:()=>''});
 doc.render(ctx);const ver=this.D.program_versions.find(v=>v.id===vid);
 this.saveBytes(doc.getZip().generate({type:'uint8array'}),('ОПП '+this.lab('program_versions',ver)).replace(/[\\/:*?"<>|]/g,'')+'.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document');
