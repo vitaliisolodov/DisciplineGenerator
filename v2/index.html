@@ -92,6 +92,37 @@ tr.eg td{border-top:2px solid #8a96ad}
 .pe{color:#c62828;margin:2px 0}.pw{color:#b26a00;margin:2px 0}
 .rel summary{cursor:pointer;font-size:16px}.rel h4{margin:14px 0 4px}.rel ul{margin:4px 0 4px 18px;padding:0}.rel li{margin:4px 0;line-height:1.4}
 .rel-about p{margin:6px 0}.rel-about ul{margin:4px 0 8px 18px;padding:0}.rel-about li{margin:3px 0}.rel-d{color:#667;font-size:13px}
+
+/* ===== UI-KIT: єдині кнопки, блоки, поля (v1.2/v2) ===== */
+main button,.card button{font:inherit;line-height:normal;padding:5px 12px;border:1px solid #c3cad6;border-radius:4px;background:#fff;color:#1f3a5f;cursor:pointer;transition:background .15s,border-color .15s}
+main button:hover:not(:disabled),.card button:hover:not(:disabled){background:#eef1f6;border-color:#98a4b8}
+main button:disabled,.card button:disabled{opacity:.55;cursor:default}
+main button:focus-visible,.card button:focus-visible{outline:2px solid #7aa7ff}
+main button.s,.card button.s{padding:4px 10px}
+main button.d,.card button.d{color:#c62828;border-color:#e3b4b4}
+main button.d:hover:not(:disabled){background:#c62828;color:#fff;border-color:#c62828}
+button.p{border:0}
+select{min-width:0;max-width:100%;padding:5px 8px;border:1px solid #c3cad6;border-radius:4px;background:#fff}
+input:not([type=checkbox]):not([type=radio]):not([type=file]),textarea{border:1px solid #c3cad6;border-radius:4px}
+.tb select,.tb input[type=search],.tb input:not([type=checkbox]):not([type=radio]){max-width:100%}
+.tb select{width:auto}
+.tb label{display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.tb .sp{flex:1}
+.card{border:1px solid #e3e7ef;border-radius:8px;padding:14px}
+.card>b:first-child,.card>.tb>b:first-child{font-size:15px}
+.hint{color:#667;font-size:13px;margin:2px 0 6px}
+.form select{width:auto;max-width:100%}
+.form textarea{max-width:100%}
+table.cmp{table-layout:fixed}
+table.cmp td{vertical-align:top}
+table.cmp textarea{width:100%;min-height:44px;resize:vertical;field-sizing:content;display:block}
+table.cmp td.h{width:30px}
+table.cmp td.cd{width:96px}
+table.cmp td.ac{width:132px;white-space:nowrap}
+.cmp-add{display:grid;grid-template-columns:minmax(200px,260px) 1fr;gap:8px 12px;align-items:start}
+.cmp-add textarea{field-sizing:content;min-height:60px}
+.cmp-add .full{grid-column:1/-1}
+pre.rep{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;border:1px solid #dde;border-radius:6px;padding:12px;font:13px/1.5 ui-monospace,Consolas,monospace;margin-top:10px}
 </style>
 </head>
 <body>
@@ -519,7 +550,8 @@ tr.eg td{border-top:2px solid #8a96ad}
         <b>Навчальний план</b>
         <input v-model="eQ" placeholder="Пошук за кодом або назвою" style="max-width:260px">
         <label class="chk" style="display:inline"><input type="checkbox" v-model="eNoCode" style="display:inline;width:auto"> лише без коду</label>
-        <span style="flex:1"></span>
+        <select v-model="eSort" title="Порядок рядків (на збережений порядок у плані не впливає)"><option value="code">Порядок: за кодом (ОК, ВК, без коду)</option><option value="plan">Порядок: як у плані</option></select>
+        <span class="sp"></span>
         <button class="s" @click="eAdd">+ Додати позицію</button>
       </div>
       <div class="tw">
@@ -859,23 +891,24 @@ tr.eg td{border-top:2px solid #8a96ad}
 <template v-if="cv">
 <div class="card form">
 <b>Додати компетенцію</b>
+<div class="cmp-add" style="margin-top:6px">
 <select v-model="nc.kind"><option v-for="k in KORD" :key="k" :value="k">{{KL[k]}}</option></select>
 <textarea v-model="nc.text" placeholder="Формулювання (без коду на початку)"></textarea>
-<button class="p" @click="addComp">Додати в кінець списку</button>
+<div class="full"><button class="p" @click="addComp">Додати в кінець списку</button></div></div>
 <small>Код призначається автоматично (ЗК.1, ЗК.2…) і його можна змінити в таблиці. Порядок змінюється перетягуванням за ⠿ або кнопками ↑ ↓ — після цього коди перенумеровуються.</small>
 </div>
 <template v-for="k in KORD" :key="k">
 <template v-if="byKind(k).length">
 <h3>{{KL[k]}}</h3>
-<table>
+<table class="cmp">
 <tr v-for="c in byKind(k)" :key="c.id" @dragover.prevent @drop="dropOn(c)">
 <td class="h"><span draggable="true" @dragstart="drag=c.id" title="Перетягніть">⠿</span></td>
-<td style="width:90px"><input v-model="c.code" size="7" @change="saveCode(c)"></td>
+<td class="cd"><input v-model="c.code" style="width:100%" @change="saveCode(c)"></td>
 <td><textarea v-model="c.text" @change="saveComp(c)"></textarea></td>
-<td style="white-space:nowrap">
+<td class="ac">
 <button class="s" @click="move(c,-1)">↑</button>
 <button class="s" @click="move(c,1)">↓</button>
-<button class="s" @click="delComp(c)">✕</button></td>
+<button class="s d" @click="delComp(c)">✕</button></td>
 </tr>
 </table>
 </template>
@@ -3677,6 +3710,7 @@ const RELEASES=[
   'Клонування версії ОП на новий рік набору (плани, компетентності, тексти ОПП).',
   'Перевірки узгодженості даних версії ОП (кредити, години, семестри, форми контролю, компетентності) і текстовий звіт про відмінності порівняно з попереднім роком.',
   'Попередження перед завантаженням ОПП, якщо не вказано гаранта програми.',
+  'Єдиний вигляд кнопок, блоків і списків у всіх вкладках; навчальний план у «ОПП та НП» можна впорядкувати за кодом (ОК, ВК, без коду); у «Компетенціях» ширші поля, вибір навчального року в шапці береться з потоків дисциплін.',
  ]],
 ]},
 {v:'1.1',date:'',title:'Імпорт ОПП і навчальних планів, імпорт РПНД з файлу',groups:[
@@ -3744,7 +3778,7 @@ impStep:'opp',
 fnames:{}, uVid:'', uDonor:'', uOpp:null, uPlanRaw:null, uOppHash:'', uPlanHash:'', uOppName:'', uPlanName:'', uRows:[], uOppOnly:[], uWarn:[], uBusy:false,
 uOpt:{meta:true, plan:true, delMissing:false, addOppOnly:false, comps:true, updTexts:false, matrix:true, ik:true},
 // редактор ОПП / НП
-ev:'', eMeta:null, eMeta0:'', eItems:[], eDel:[], eQ:'', eNoCode:false, eOpen:{}, eBusy:false, CONTROLS, LEVELS,
+ev:'', eMeta:null, eMeta0:'', eItems:[], eDel:[], eQ:'', eNoCode:false, eSort:'code', eOpen:{}, eBusy:false, CONTROLS, LEVELS,
 loadYear:new Date().getFullYear(), loadTeacher:null,
 impLoad:null, loadSkipNonDisc:true, loadOnlyMatched:false, loadSharedKey:true,
 statusYear:0, statusFilter:'',
@@ -4247,8 +4281,12 @@ eMetaDirty() { return !!this.eMeta && JSON.stringify(this.eMeta) !== this.eMeta0
 eDirty() { return this.eMetaDirty || this.eDel.length > 0 || this.eItems.some(i => this.eRowDirty(i)); },
 eRows() {
   const q = this.eQ.trim().toLowerCase();
-  return this.eItems.filter(i => (!this.eNoCode || !i.code) &&
+  const rows = this.eItems.filter(i => (!this.eNoCode || !i.code) &&
     (!q || (String(i.code || '') + ' ' + String(i.name_uk || '')).toLowerCase().includes(q)));
+  if (this.eSort !== 'code') return rows;
+  const rk = i => i.code ? colRank(i.code) : 3;   // ОК → ВК → інші коди → без коду
+  return rows.slice().sort((a, b) => rk(a) - rk(b) ||
+    String(a.code || '').localeCompare(String(b.code || ''), 'uk', { numeric: true }));
 },
 eInfo() {
   const cur = (this.D.curricula || []).find(c => c.version_id === this.ev);
@@ -4366,7 +4404,7 @@ authors(id,orEmpty){return(this.D.discipline_teachers||[]).filter(x=>x.disciplin
 .map(x=>this.lab('profiles',(this.D.profiles||[]).find(p=>p.id===x.user_id))).join(', ')||(orEmpty?'':'—')},
 teachersOf(d){return(this.D.discipline_teachers||[]).filter(x=>x.discipline_id===d.id)
 .map(x=>this.lab('profiles',(this.D.profiles||[]).find(p=>p.id===x.user_id))).join(', ')},
-studyYearOf(d){const y=Number(d&&d.params&&d.params.day&&d.params.day.year)||0;
+studyYearOf(d){if(d&&Number(d.study_year))return Number(d.study_year);const y=Number(d&&d.params&&d.params.day&&d.params.day.year)||0;
 const v=this.D.program_versions.find(x=>x.id===d.version_id);
 return (y&&v&&v.entry_year)?v.entry_year+y-1:0},
 async saveTeachers(id,list){const cur=(this.D.discipline_teachers||[]).filter(x=>x.discipline_id===id).map(x=>x.user_id);
